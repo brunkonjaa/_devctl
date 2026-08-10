@@ -14,6 +14,8 @@ import (
 	"devctl/internal/scheduler"
 )
 
+const dependencyCheckVersion = "android-dependency-pack-v2"
+
 func AdditionalChecks(project model.Project) []scheduler.CheckSpec {
 	return []scheduler.CheckSpec{
 		dependencyVulnerabilityCheck(project),
@@ -23,7 +25,7 @@ func AdditionalChecks(project model.Project) []scheduler.CheckSpec {
 
 func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 	return scheduler.CheckSpec{
-		ID: "dependency-vulnerability-scan",
+		ID: "dependency-vulnerability-scan", Version: dependencyCheckVersion,
 		Run: func(ctx context.Context) model.CheckResult {
 			if !hasSupportedDependencyManifest(project.Path) {
 				return model.CheckResult{ID: "dependency-vulnerability-scan", Status: model.NotTested, Summary: "Dependency vulnerability scan not tested", Reason: "No supported dependency lockfile or verification metadata was found"}
@@ -32,6 +34,10 @@ func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 				return model.CheckResult{ID: "dependency-vulnerability-scan", Status: model.NotTested, Summary: "Dependency vulnerability scan not tested", Reason: "osv-scanner is not installed"}
 			}
 			result, err := runner.Run(ctx, project.Path, runner.OsvScanner)
+			toolVersion := "unknown"
+			if versionResult, versionErr := runner.Run(ctx, project.Path, runner.OsvScannerVersion); versionErr == nil {
+				toolVersion = strings.TrimSpace(versionResult.Output)
+			}
 			check := model.CheckResult{ID: "dependency-vulnerability-scan", RawOutput: result.Output, Evidence: []model.Evidence{{Type: "osv-json", Detail: "OSV-Scanner JSON output"}}}
 			findings, parseErr := parseOSVFindings(result.Output)
 			if parseErr != nil {
@@ -41,6 +47,10 @@ func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 				return check
 			}
 			check.Findings = findings
+			for index := range check.Findings {
+				check.Findings[index].ToolVersion = toolVersion
+				check.Findings[index].Project = project.Name
+			}
 			if err != nil {
 				check.Status = model.Error
 				check.Summary = "Dependency vulnerability scan did not complete"

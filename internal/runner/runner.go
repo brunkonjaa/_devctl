@@ -17,20 +17,21 @@ import (
 type CommandID string
 
 const (
-	GitStatus       CommandID = "git-status"
-	GitBranch       CommandID = "git-branch"
-	GitCommit       CommandID = "git-commit"
-	JavaVersion     CommandID = "java-version"
-	GradleBuild     CommandID = "gradle-build"
-	GradleUnitTests CommandID = "gradle-unit-tests"
-	GradleLint      CommandID = "gradle-lint"
-	GradleCoverage  CommandID = "gradle-coverage"
-	OsvScanner      CommandID = "osv-scanner"
-	GoVersion       CommandID = "go-version"
-	GoEnvironment   CommandID = "go-environment"
-	GoTest          CommandID = "go-test"
-	GoTestRace      CommandID = "go-test-race"
-	GoBuild         CommandID = "go-build"
+	GitStatus         CommandID = "git-status"
+	GitBranch         CommandID = "git-branch"
+	GitCommit         CommandID = "git-commit"
+	JavaVersion       CommandID = "java-version"
+	GradleBuild       CommandID = "gradle-build"
+	GradleUnitTests   CommandID = "gradle-unit-tests"
+	GradleLint        CommandID = "gradle-lint"
+	GradleCoverage    CommandID = "gradle-coverage"
+	OsvScanner        CommandID = "osv-scanner"
+	OsvScannerVersion CommandID = "osv-scanner-version"
+	GoVersion         CommandID = "go-version"
+	GoEnvironment     CommandID = "go-environment"
+	GoTest            CommandID = "go-test"
+	GoTestRace        CommandID = "go-test-race"
+	GoBuild           CommandID = "go-build"
 )
 
 type Spec struct {
@@ -46,20 +47,21 @@ type TimeoutPolicy struct {
 }
 
 var allowed = map[CommandID]Spec{
-	GitStatus:       {ID: GitStatus, Program: "git", Args: []string{"status", "--short", "--branch"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GitBranch:       {ID: GitBranch, Program: "git", Args: []string{"branch", "--show-current"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GitCommit:       {ID: GitCommit, Program: "git", Args: []string{"rev-parse", "HEAD"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	JavaVersion:     {ID: JavaVersion, Program: "java", Args: []string{"-version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GradleBuild:     gradleSpec(GradleBuild, "assembleDebug", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleUnitTests: gradleSpec(GradleUnitTests, "test", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleLint:      gradleSpec(GradleLint, "lint", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleCoverage:  gradleSpec(GradleCoverage, "jacocoTestReport", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	OsvScanner:      {ID: OsvScanner, Program: "osv-scanner", Args: []string{"scan", "source", "--recursive", "--format=json", "."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
-	GoVersion:       {ID: GoVersion, Program: "go", Args: []string{"version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoEnvironment:   {ID: GoEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoTest:          {ID: GoTest, Program: "go", Args: []string{"test", "./..."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
-	GoTestRace:      {ID: GoTestRace, Program: "go", Args: []string{"test", "-race", "./..."}, Timeout: TimeoutPolicy{Hard: 20 * time.Minute, Inactivity: 3 * time.Minute}},
-	GoBuild:         {ID: GoBuild, Program: "go", Args: []string{"build", "-o", filepath.Join(".devctl", "bin", "devctl-selfcheck"), "./cmd/devctl"}, Timeout: TimeoutPolicy{Hard: 5 * time.Minute, Inactivity: 3 * time.Minute}},
+	GitStatus:         {ID: GitStatus, Program: "git", Args: []string{"status", "--short", "--branch"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitBranch:         {ID: GitBranch, Program: "git", Args: []string{"branch", "--show-current"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitCommit:         {ID: GitCommit, Program: "git", Args: []string{"rev-parse", "HEAD"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	JavaVersion:       {ID: JavaVersion, Program: "java", Args: []string{"-version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GradleBuild:       gradleSpec(GradleBuild, "assembleDebug", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleUnitTests:   gradleSpec(GradleUnitTests, "test", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleLint:        gradleSpec(GradleLint, "lint", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleCoverage:    gradleSpec(GradleCoverage, "jacocoTestReport", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	OsvScanner:        {ID: OsvScanner, Program: "osv-scanner", Args: []string{"scan", "source", "--recursive", "--format=json", "."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
+	OsvScannerVersion: {ID: OsvScannerVersion, Program: "osv-scanner", Args: []string{"--version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoVersion:         {ID: GoVersion, Program: "go", Args: []string{"version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoEnvironment:     {ID: GoEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoTest:            {ID: GoTest, Program: "go", Args: []string{"test", "./..."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
+	GoTestRace:        {ID: GoTestRace, Program: "go", Args: []string{"test", "-race", "./..."}, Timeout: TimeoutPolicy{Hard: 20 * time.Minute, Inactivity: 3 * time.Minute}},
+	GoBuild:           {ID: GoBuild, Program: "go", Args: []string{"build", "-o", filepath.Join(".devctl", "bin", "devctl-selfcheck"), "./cmd/devctl"}, Timeout: TimeoutPolicy{Hard: 5 * time.Minute, Inactivity: 3 * time.Minute}},
 }
 
 func gradleSpec(id CommandID, task string, timeout TimeoutPolicy) Spec {
