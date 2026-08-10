@@ -10,3 +10,33 @@ lessons:
       - complete spawned process-tree cleanup
     regression_coverage: yes
     applies_to: external-process-checks
+
+  - id: LESSON-0002
+    title: Local verification can pass with required untracked or ignored files
+    area: repository-reproducibility
+    failure: >-
+      A required source file existed locally but was excluded by .gitignore.
+      Local verification succeeded because the file was present in the working
+      tree. A clean CI checkout failed because the repository did not contain
+      the file.
+    root_cause: >-
+      Verification operated against the current filesystem rather than proving
+      that the committed repository contained everything required to reproduce
+      the build.
+    why_existing_checks_missed_it: >-
+      Git status did not surface ignored files as an actionable failure. Build
+      and test checks consumed the local filesystem successfully.
+    question: >-
+      Can this project be built and verified using only the files contained in
+      the committed repository?
+    deterministic_candidate: true
+    correction: >-
+      Keep clean CI verification as the repository reproducibility check. A
+      future repository-state check may classify suspicious ignored or
+      untracked source-like files, but should not treat every ignored file as a
+      defect.
+    regression_coverage: yes
+    applies_to:
+      - repository-state
+      - ci-bootstrap
+      - build-and-test-checks
