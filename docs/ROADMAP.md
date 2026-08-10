@@ -14,6 +14,8 @@ Navigation: [documentation index](README.md) · [current status](STATUS.md) · [
 
 Leave dependency vulnerability scanning as `NOT_TESTED`.
 
+Local implementation is complete. The remaining integration step is to commit the devctl changes, update HearthLink's pinned private devctl commit, and run CI. The JaCoCo scope review excluded Room KSP `*_Impl` generated classes only; it measured `8/693` authored production lines (`1.15%`), below the `70%` minimum.
+
 ## Stage 4D — Dependency evidence
 
 - Add supported Gradle dependency evidence.

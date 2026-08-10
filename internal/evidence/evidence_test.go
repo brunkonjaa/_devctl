@@ -38,3 +38,32 @@ func TestWriteCreatesReconstructableEvidenceTree(t *testing.T) {
 		t.Fatalf("expected check version in per-check evidence, got %#v", persisted)
 	}
 }
+
+func TestWriteCopiesCoverageReportArtifact(t *testing.T) {
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "app", "build", "reports", "jacoco", "jacocoTestReport.xml")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, []byte("<report/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := Write(root, model.Report{
+		RunID:   "coverage-run",
+		Project: &model.Project{Name: "Example", Path: root},
+		Checks:  []model.CheckResult{{ID: "android-coverage", Status: model.Pass, Evidence: []model.Evidence{{Type: "coverage-report", Path: reportPath}}}},
+		Overall: model.Pass,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(root, filepath.FromSlash(path), "artifacts", "android-coverage.xml")
+	data, err := os.ReadFile(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "<report/>" {
+		t.Fatalf("unexpected coverage artifact: %q", data)
+	}
+}

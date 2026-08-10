@@ -19,6 +19,9 @@ func Write(projectPath string, report model.Report) (string, error) {
 	if err := os.MkdirAll(filepath.Join(root, "raw"), 0o700); err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o700); err != nil {
+		return "", err
+	}
 
 	report.EvidencePath = filepath.ToSlash(relativeRoot)
 	if err := writeJSON(filepath.Join(root, "report.json"), report); err != nil {
@@ -44,6 +47,22 @@ func Write(projectPath string, report model.Report) (string, error) {
 		}
 		if check.RawOutput != "" {
 			if err := os.WriteFile(filepath.Join(root, "raw", name+".log"), []byte(check.RawOutput), 0o600); err != nil {
+				return "", err
+			}
+		}
+		for _, item := range check.Evidence {
+			if item.Type != "coverage-report" || item.Path == "" {
+				continue
+			}
+			source := item.Path
+			if !filepath.IsAbs(source) {
+				source = filepath.Join(projectPath, source)
+			}
+			data, err := os.ReadFile(source)
+			if err != nil {
+				return "", fmt.Errorf("copy coverage evidence %q: %w", item.Path, err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "artifacts", name+".xml"), data, 0o600); err != nil {
 				return "", err
 			}
 		}

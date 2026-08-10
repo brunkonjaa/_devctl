@@ -87,6 +87,11 @@ func collectCoverage(ctx context.Context, project model.Project) model.CheckResu
 	}
 	result.Evidence = append(result.Evidence, model.Evidence{Type: "coverage-report", Path: reportPath, Detail: fmt.Sprintf("line coverage %.1f%%", percentage)})
 	result.Findings = []model.Finding{{FindingID: "COV-LINE", Severity: "info", Issue: fmt.Sprintf("line coverage %.1f%%", percentage), Action: "maintain or improve test coverage", EvidencePath: reportPath, Source: "jacoco", ToolVersion: "unknown", Project: project.Name}}
+	applyCoverageThreshold(&result, percentage)
+	return result
+}
+
+func applyCoverageThreshold(result *model.CheckResult, percentage float64) {
 	switch {
 	case percentage < 70:
 		result.Status = model.Fail
@@ -99,7 +104,6 @@ func collectCoverage(ctx context.Context, project model.Project) model.CheckResu
 		result.Status = model.Pass
 		result.Summary = fmt.Sprintf("Coverage %.1f%% meets preferred target 80%%", percentage)
 	}
-	return result
 }
 
 func hasSupportedDependencyManifest(root string) bool {
@@ -179,7 +183,7 @@ func findCoverageReport(root string) (string, float64, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".xml") || !strings.Contains(strings.ToLower(path), "jacoco") {
+		if info.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".xml") || !strings.Contains(strings.ToLower(path), "jacoco") {
 			return nil
 		}
 		data, readErr := os.ReadFile(path)
@@ -197,7 +201,7 @@ func findCoverageReport(root string) (string, float64, error) {
 				reportPath = path
 				totalMissed = counter.Missed
 				totalCovered = counter.Covered
-				return filepath.SkipDir
+				return nil
 			}
 		}
 		return nil
