@@ -4,7 +4,7 @@ Keep increments narrow enough that a CI result explains what changed.
 
 Navigation: [documentation index](README.md) · [current status](STATUS.md) · [decisions](DECISIONS.md) · [lessons](LESSONS.md)
 
-## Next: Stage 4C — HearthLink JaCoCo coverage
+## Completed: Stage 4C — HearthLink JaCoCo coverage
 
 1. Configure JaCoCo in HearthLink.
 2. Make Gradle produce an XML coverage report.
@@ -14,7 +14,7 @@ Navigation: [documentation index](README.md) · [current status](STATUS.md) · [
 
 Leave dependency vulnerability scanning as `NOT_TESTED`.
 
-Local implementation is complete. The remaining integration step is to commit the devctl changes, update HearthLink's pinned private devctl commit, and run CI. The JaCoCo scope review excluded Room KSP `*_Impl` generated classes only; it measured `8/693` authored production lines (`1.15%`), below the `70%` minimum.
+The JaCoCo scope review excluded Room KSP `*_Impl` generated classes only; it measured `8/693` authored production lines (`1.15%`), below the `70%` minimum. HearthLink CI run `31398424112` used pinned devctl commit `5b4a6bf3413f16658e72f8809590093cedc8718b`, preserved the blocking `FAIL`, and uploaded the copied coverage XML with the result evidence.
 
 ## Stage 4D — Dependency evidence
 

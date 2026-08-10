@@ -6,12 +6,12 @@ Navigation: [documentation index](README.md) · [roadmap](ROADMAP.md) · [decisi
 
 ## Current state
 
-Stage 4C is implemented locally. HearthLink now produces a JaCoCo XML report, devctl parses line coverage and applies the configured thresholds, and coverage XML is copied into the uploaded evidence tree.
+Stage 4C is complete. HearthLink produces a JaCoCo XML report, devctl parses line coverage and applies the configured thresholds, and coverage XML is copied into the uploaded evidence tree.
 
 Next:
 
 ```text
-Stage 4C — HearthLink JaCoCo coverage CI pin and run
+Stage 4D — Dependency evidence
 ```
 
 Do not start dependency scanning, caching, changed-file logic, or AI escalation as part of Stage 4C.
@@ -65,12 +65,14 @@ Do not start dependency scanning, caching, changed-file logic, or AI escalation 
 - devctl reads the JaCoCo `LINE` counter and applies `80%` preferred and `70%` blocking thresholds.
 - Coverage reports are copied to `.devctl/evidence/<run>/artifacts/android-coverage.xml`.
 - JaCoCo scope review removed only Room KSP `*_Impl` generated classes. The report now measures `8` covered and `685` missed authored production lines (`1.15%`), so the configured blocking result remains truthful `FAIL`.
-- The GitHub workflow still points at the Stage 4B devctl commit until this work is committed and the pin is updated.
+- HearthLink pins `_devctl` commit `5b4a6bf3413f16658e72f8809590093cedc8718b`; its CI run `31398424112` built that pin and uploaded the copied XML evidence artifact.
 
 ## Important commits
 
 - `_devctl` `66c29e5e89e39c8c5e6286fc3dd1f4e5510a72a5`
 - HearthLink `a4d0fd7ff6786e1663d4b74851b388e6575e3507`
+- Stage 4C `_devctl` `5b4a6bf3413f16658e72f8809590093cedc8718b`
+- Stage 4C HearthLink `101498b3c602c524e032f28be94af9db5630a8a3`
 
 ## Current policy facts
 
