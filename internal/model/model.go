@@ -82,16 +82,18 @@ type Report struct {
 // SessionState is deliberately small and contains no credentials or raw logs.
 // It describes where work stopped; it is not verification evidence.
 type SessionState struct {
-	SchemaVersion string    `json:"schema_version"`
-	Project       string    `json:"project"`
-	ProjectPath   string    `json:"project_path"`
-	Branch        string    `json:"branch,omitempty"`
-	LastCommit    string    `json:"last_commit,omitempty"`
-	CurrentTask   string    `json:"current_task,omitempty"`
-	LastResult    Status    `json:"last_result,omitempty"`
-	EvidencePath  string    `json:"evidence_path,omitempty"`
-	CIState       string    `json:"ci_state,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	SchemaVersion  string    `json:"schema_version"`
+	Project        string    `json:"project"`
+	ProjectPath    string    `json:"project_path"`
+	Branch         string    `json:"branch,omitempty"`
+	LastCommit     string    `json:"last_commit,omitempty"`
+	CurrentTask    string    `json:"current_task,omitempty"`
+	LastResult     Status    `json:"last_result,omitempty"`
+	EvidencePath   string    `json:"evidence_path,omitempty"`
+	CIState        string    `json:"ci_state,omitempty"`
+	PromptDecision string    `json:"prompt_decision,omitempty"`
+	PromptDate     string    `json:"prompt_date,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type FailurePacket struct {

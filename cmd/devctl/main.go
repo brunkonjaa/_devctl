@@ -122,13 +122,15 @@ func sessionCommand(args []string) int {
 		result := flags.String("result", "", "last result")
 		evidence := flags.String("evidence", "", "last evidence path")
 		ci := flags.String("ci", "", "CI state")
+		decision := flags.String("decision", "", "prompt decision")
+		promptDate := flags.String("prompt-date", "", "prompt date in YYYY-MM-DD format")
 		if err := flags.Parse(args[1:]); err != nil {
 			return exitInternal
 		}
 		if *project == "" {
 			*project = filepath.Base(*projectPath)
 		}
-		state := model.SessionState{Project: *project, ProjectPath: *projectPath, Branch: *branch, LastCommit: *commit, CurrentTask: *task, LastResult: model.Status(*result), EvidencePath: *evidence, CIState: *ci}
+		state := model.SessionState{Project: *project, ProjectPath: *projectPath, Branch: *branch, LastCommit: *commit, CurrentTask: *task, LastResult: model.Status(*result), EvidencePath: *evidence, CIState: *ci, PromptDecision: *decision, PromptDate: *promptDate}
 		path, err := session.Record(state)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

@@ -20,7 +20,9 @@ Daily operations:
 Windows setup:
 
 1. Install Go and build `devctl.exe` with `go build -o devctl.exe ./cmd/devctl`.
-2. Run `scripts/Register-DevctlStartup.ps1` once as the interactive user if logon resume is wanted.
+2. Run `scripts/Register-DevctlStartup.ps1` once as the interactive user. It prompts at logon and daily at 09:00.
 3. Use `scripts/devctl-recovery.ps1 -ProjectPath <path>` when the saved path is missing or stale.
 
 Session state is stored under the user configuration directory, normally `%LOCALAPPDATA%\\devctl\\session.json`. It is separate from `.devctl/evidence/`, which remains project-local verification evidence.
+
+The prompt offers `Continue`, `Snooze`, and `Skip today`. Decisions are recorded in session state; `Snooze` and `Skip today` do not open the workspace.
