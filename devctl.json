@@ -1,0 +1,10 @@
+{
+  "project": "_devctl",
+  "version": "1",
+  "checks": {
+    "go-environment": {"enabled": true, "required": true},
+    "go-test": {"enabled": true, "required": true},
+    "go-test-race": {"enabled": true, "required": false},
+    "go-build": {"enabled": true, "required": true}
+  }
+}

@@ -1,0 +1,28 @@
+{
+	"version": "1",
+  "checks": {
+	"go-environment": {"enabled": true, "required": true},
+	"go-test": {"enabled": true, "required": true},
+	"go-test-race": {"enabled": true, "required": false},
+	"go-build": {"enabled": true, "required": true},
+    "secret-scan": {
+      "enabled": true,
+      "required": true,
+      "blocking": true
+    },
+    "dependency-vulnerability-scan": {
+      "enabled": true,
+      "required": false
+    },
+    "android-coverage": {
+      "enabled": true,
+      "required": false,
+      "preferred": 80,
+      "minimum": 70
+    },
+    "git-status": {
+      "enabled": true,
+      "blocking": false
+    }
+  }
+}

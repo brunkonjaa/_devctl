@@ -1,0 +1,12 @@
+lessons:
+  - id: LESSON-0001
+    area: process-execution
+    problem: fixed wall-clock timeout terminated a healthy Gradle workload
+    root_cause: generic elapsed-time timeout could not distinguish slow execution from inactivity
+    correction:
+      - per-check hard timeout
+      - per-check inactivity timeout
+      - streamed output activity tracking
+      - complete spawned process-tree cleanup
+    regression_coverage: yes
+    applies_to: external-process-checks
