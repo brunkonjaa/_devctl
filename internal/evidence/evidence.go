@@ -31,18 +31,18 @@ func Write(projectPath string, report model.Report) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(filepath.Join(root, "checks"), 0o700); err != nil {
-		return "", err
+		return "", fmt.Errorf("create checks evidence directory: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "raw"), 0o700); err != nil {
-		return "", err
+		return "", fmt.Errorf("create raw evidence directory: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o700); err != nil {
-		return "", err
+		return "", fmt.Errorf("create artifact evidence directory: %w", err)
 	}
 
 	report.EvidencePath = filepath.ToSlash(relativeRoot)
 	if err := writeJSON(filepath.Join(root, "report.json"), report); err != nil {
-		return "", err
+		return "", fmt.Errorf("write report: %w", err)
 	}
 	projectName := "unknown"
 	if report.Project != nil {
@@ -55,16 +55,16 @@ func Write(projectPath string, report model.Report) (string, error) {
 	}
 	fmt.Fprintf(&summary, "\nOVERALL: %s\n", report.Overall)
 	if err := os.WriteFile(filepath.Join(root, "summary.txt"), []byte(summary.String()), 0o600); err != nil {
-		return "", err
+		return "", fmt.Errorf("write summary: %w", err)
 	}
 	for _, check := range report.Checks {
 		name := safeName(check.ID)
 		if err := writeJSON(filepath.Join(root, "checks", name+".json"), check); err != nil {
-			return "", err
+			return "", fmt.Errorf("write check %s: %w", check.ID, err)
 		}
 		if check.RawOutput != "" {
 			if err := os.WriteFile(filepath.Join(root, "raw", name+".log"), []byte(check.RawOutput), 0o600); err != nil {
-				return "", err
+				return "", fmt.Errorf("write raw output %s: %w", check.ID, err)
 			}
 		}
 		for _, item := range check.Evidence {
@@ -83,7 +83,7 @@ func Write(projectPath string, report model.Report) (string, error) {
 				return "", fmt.Errorf("copy coverage evidence %q: %w", item.Path, err)
 			}
 			if err := os.WriteFile(filepath.Join(root, "artifacts", name+".xml"), data, 0o600); err != nil {
-				return "", err
+				return "", fmt.Errorf("write artifact %s: %w", check.ID, err)
 			}
 		}
 	}

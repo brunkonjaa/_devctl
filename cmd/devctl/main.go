@@ -191,6 +191,9 @@ func printReport(report model.Report) {
 	}
 	for _, check := range report.Checks {
 		fmt.Printf("%-24s %s — %s\n", strings.ToUpper(check.ID), check.Status, check.Summary)
+		if check.Reason != "" && check.Status == model.Error {
+			fmt.Printf("  reason: %s\n", check.Reason)
+		}
 	}
 	fmt.Printf("OVERALL: %s\n", report.Overall)
 }
