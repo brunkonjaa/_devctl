@@ -92,7 +92,7 @@ func Write(projectPath string, report model.Report) (string, error) {
 
 func ensureContainedDirectory(path, root string) error {
 	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		if info.Mode()&os.ModeSymlink == 0 && !info.IsDir() {
 			return fmt.Errorf("evidence directory is not a normal directory: %s", path)
 		}
 	} else if os.IsNotExist(err) {
@@ -116,6 +116,10 @@ func ensureContainedDirectory(path, root string) error {
 	}
 	if !contained(canonical, canonicalRoot) {
 		return fmt.Errorf("evidence path escapes project: %s", path)
+	}
+	canonicalInfo, err := os.Stat(canonical)
+	if err != nil || !canonicalInfo.IsDir() {
+		return fmt.Errorf("evidence path is not a directory: %s", path)
 	}
 	return nil
 }
