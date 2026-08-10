@@ -2,6 +2,8 @@
 
 The structured source of truth is `knowledge/lessons.yaml`. This file is a quick index for a new session.
 
+Navigation: [documentation index](README.md) · [current status](STATUS.md) · [roadmap](ROADMAP.md) · [decisions](DECISIONS.md)
+
 ## LESSON-0001 — Healthy long-running tools can exceed a fixed timeout
 
 Area: process execution.

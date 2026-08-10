@@ -1,5 +1,7 @@
 # devctl architecture decisions
 
+Navigation: [documentation index](README.md) · [current status](STATUS.md) · [roadmap](ROADMAP.md) · [lessons](LESSONS.md)
+
 ## Deterministic work stays deterministic
 
 Builds, tests, lint, secret scans, coverage parsing, dependency scans, Git inspection, scheduling, policy evaluation, and evidence writing use ordinary tools and code.

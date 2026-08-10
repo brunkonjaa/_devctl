@@ -2,6 +2,8 @@
 
 This is the short handoff point for continuing work on `_devctl`.
 
+Navigation: [documentation index](README.md) · [roadmap](ROADMAP.md) · [decisions](DECISIONS.md) · [lessons](LESSONS.md)
+
 ## Current state
 
 Stage 4B is complete. `_devctl` can verify itself and HearthLink can consume a pinned private version of it in GitHub Actions.

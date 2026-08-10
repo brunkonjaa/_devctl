@@ -2,6 +2,8 @@
 
 Keep increments narrow enough that a CI result explains what changed.
 
+Navigation: [documentation index](README.md) · [current status](STATUS.md) · [decisions](DECISIONS.md) · [lessons](LESSONS.md)
+
 ## Next: Stage 4C — HearthLink JaCoCo coverage
 
 1. Configure JaCoCo in HearthLink.
