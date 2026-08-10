@@ -14,6 +14,6 @@ $triggers = @(
     (New-ScheduledTaskTrigger -AtLogOn -User $user),
     (New-ScheduledTaskTrigger -Daily -At 9:00AM)
 )
-$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel LeastPrivilege
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal -Description 'Prompt for the saved devctl task at logon and daily at 9:00 AM.' -Force | Out-Null
 Write-Output "Registered: $taskName"
