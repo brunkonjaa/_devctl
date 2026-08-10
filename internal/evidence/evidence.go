@@ -125,7 +125,7 @@ func ensureContainedFile(path, root string) error {
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+	if info.IsDir() {
 		return fmt.Errorf("evidence source is not a regular file: %s", path)
 	}
 	canonical, err := filepath.EvalSymlinks(path)
@@ -138,6 +138,10 @@ func ensureContainedFile(path, root string) error {
 	}
 	if !contained(canonical, canonicalRoot) {
 		return fmt.Errorf("evidence source escapes project: %s", path)
+	}
+	canonicalInfo, err := os.Stat(canonical)
+	if err != nil || !canonicalInfo.Mode().IsRegular() {
+		return fmt.Errorf("evidence source is not a regular file: %s", path)
 	}
 	return nil
 }

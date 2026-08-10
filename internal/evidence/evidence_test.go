@@ -79,3 +79,22 @@ func TestWriteRejectsSymlinkedEvidenceDirectory(t *testing.T) {
 		t.Fatal("expected symlinked evidence path to be rejected")
 	}
 }
+
+func TestWriteAllowsContainedCoverageSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "coverage.xml")
+	link := filepath.Join(root, "app", "build", "reports", "jacoco", "report.xml")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("<report/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, err := Write(root, model.Report{RunID: "contained-link", Project: &model.Project{Name: "Example", Path: root}, Checks: []model.CheckResult{{ID: "android-coverage", Status: model.Pass, Evidence: []model.Evidence{{Type: "coverage-report", Path: link}}}}})
+	if err != nil {
+		t.Fatalf("contained coverage symlink should be accepted: %v", err)
+	}
+}
