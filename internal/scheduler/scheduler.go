@@ -13,6 +13,8 @@ import (
 
 type CheckFunc func(context.Context) model.CheckResult
 
+const defaultCheckVersion = "1"
+
 type TimeoutPolicy struct {
 	Hard       time.Duration
 	Inactivity time.Duration
@@ -102,7 +104,7 @@ func Run(ctx context.Context, plan Plan, maxConcurrent int) []model.CheckResult 
 	for len(pending) > 0 {
 		if ctx.Err() != nil {
 			for id := range pending {
-				results[id] = skipped(id, "scheduler context was cancelled")
+				results[id] = skipped(id, plan.Checks[id].Version, "scheduler context was cancelled")
 				delete(pending, id)
 			}
 			break
@@ -111,14 +113,14 @@ func Run(ctx context.Context, plan Plan, maxConcurrent int) []model.CheckResult 
 		ready := readyChecks(plan, pending, results)
 		if len(ready) == 0 {
 			for id := range pending {
-				results[id] = model.CheckResult{ID: id, Status: model.Error, Summary: "scheduler could not make progress", Reason: "unresolved dependency state"}
+				results[id] = model.CheckResult{ID: id, CheckVersion: checkVersion(plan.Checks[id]), Status: model.Error, Summary: "scheduler could not make progress", Reason: "unresolved dependency state"}
 				delete(pending, id)
 			}
 			break
 		}
 		for _, id := range ready {
 			if blockedByDependency(plan.Checks[id], results) {
-				results[id] = skipped(id, "dependency did not complete successfully")
+				results[id] = skipped(id, plan.Checks[id].Version, "dependency did not complete successfully")
 				delete(pending, id)
 			}
 		}
@@ -215,7 +217,7 @@ func runOne(ctx context.Context, spec CheckSpec) model.CheckResult {
 	started := time.Now()
 	result := spec.Run(checkContext)
 	result.ID = spec.ID
-	result.CheckVersion = spec.Version
+	result.CheckVersion = checkVersion(spec)
 	result.DurationMS = time.Since(started).Milliseconds()
 	if checkContext.Err() == context.DeadlineExceeded {
 		result.Status = model.Error
@@ -230,8 +232,19 @@ func runOne(ctx context.Context, spec CheckSpec) model.CheckResult {
 	return result
 }
 
-func skipped(id, reason string) model.CheckResult {
-	return model.CheckResult{ID: id, Status: model.Skip, Summary: "check was not run", Reason: reason}
+func skipped(id, version, reason string) model.CheckResult {
+	return model.CheckResult{ID: id, CheckVersion: versionOrDefault(version), Status: model.Skip, Summary: "check was not run", Reason: reason}
+}
+
+func checkVersion(spec CheckSpec) string {
+	return versionOrDefault(spec.Version)
+}
+
+func versionOrDefault(version string) string {
+	if version == "" {
+		return defaultCheckVersion
+	}
+	return version
 }
 
 func dependencyBlocks(result model.CheckResult) bool {

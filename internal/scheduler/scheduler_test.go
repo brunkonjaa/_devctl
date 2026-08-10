@@ -73,6 +73,23 @@ func TestRunAllowsWarningsToContinue(t *testing.T) {
 	}
 }
 
+func TestRunPersistsCheckVersionForCompletedAndSkippedChecks(t *testing.T) {
+	plan, err := BuildPlan([]CheckSpec{
+		{ID: "build", Version: "build-v2", Run: func(context.Context) model.CheckResult { return model.CheckResult{Status: model.Fail} }},
+		{ID: "tests", Requires: []string{"build"}, Run: passCheck},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := Run(context.Background(), plan, 1)
+	if results[0].CheckVersion != "build-v2" {
+		t.Fatalf("expected explicit check version, got %#v", results[0])
+	}
+	if results[1].CheckVersion != "1" {
+		t.Fatalf("expected default check version on skipped result, got %#v", results[1])
+	}
+}
+
 func TestRunSerializesSharedResources(t *testing.T) {
 	var active atomic.Int32
 	var maxActive atomic.Int32
