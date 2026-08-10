@@ -1,4 +1,4 @@
-\devctl.exe
-\devctl
+/devctl.exe
+/devctl
 *.test
 .devctl/
