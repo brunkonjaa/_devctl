@@ -23,6 +23,6 @@ Windows setup:
 2. Run `scripts/Register-DevctlStartup.ps1` once as the interactive user. It prompts at logon and daily at 09:00.
 3. Use `scripts/devctl-recovery.ps1 -ProjectPath <path>` when the saved path is missing or stale.
 
-Session state is stored under the user configuration directory, normally `%LOCALAPPDATA%\\devctl\\session.json`. It is separate from `.devctl/evidence/`, which remains project-local verification evidence.
+Session state is stored under the user configuration directory, normally `%APPDATA%\\devctl\\session.json`. It is separate from `.devctl/evidence/`, which remains project-local verification evidence.
 
-The prompt offers `Continue`, `Snooze`, and `Skip today`. Decisions are recorded in session state; `Snooze` and `Skip today` do not open the workspace.
+The prompt offers `Continue with current task`, `Continue with overall check`, and `Exit this check and use Windows`. The current task and project are taken from the latest saved session, regardless of which project was last used. If session state is missing or stale, the newest Git project under `C:\Projects` is used instead. Decisions are recorded in session state. The current-task option writes `%APPDATA%\\devctl\\codex-handoff.md` with the task, repository state, and overview, then opens that handoff with the workspace in VS Code. The overall-check option runs `devctl verify` for the saved project and shows its result before opening the workspace.

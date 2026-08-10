@@ -28,6 +28,11 @@ func Record(state model.SessionState) (string, error) {
 	if state.Project == "" || state.ProjectPath == "" {
 		return "", errors.New("project and project_path are required")
 	}
+	if state.CurrentTask == "" {
+		if previous, err := Load(); err == nil {
+			state.CurrentTask = previous.CurrentTask
+		}
+	}
 	abs, err := filepath.Abs(state.ProjectPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve project path: %w", err)

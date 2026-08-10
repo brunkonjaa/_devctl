@@ -182,7 +182,8 @@ func recordVerificationSession(report model.Report, projectPath string) error {
 	}
 	branchResult, _ := runner.Run(context.Background(), projectPath, runner.GitBranch)
 	commitResult, _ := runner.Run(context.Background(), projectPath, runner.GitCommit)
-	_, err := session.Record(model.SessionState{Project: report.Project.Name, ProjectPath: projectPath, Branch: strings.TrimSpace(branchResult.Output), LastCommit: strings.TrimSpace(commitResult.Output), LastResult: report.Overall, EvidencePath: report.EvidencePath})
+	state := model.SessionState{Project: report.Project.Name, ProjectPath: projectPath, Branch: strings.TrimSpace(branchResult.Output), LastCommit: strings.TrimSpace(commitResult.Output), LastResult: report.Overall, EvidencePath: report.EvidencePath}
+	_, err := session.Record(state)
 	return err
 }
 
