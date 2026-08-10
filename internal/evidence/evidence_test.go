@@ -98,3 +98,27 @@ func TestWriteAllowsContainedCoverageSymlink(t *testing.T) {
 		t.Fatalf("contained coverage symlink should be accepted: %v", err)
 	}
 }
+
+func TestWriteKeepsEscapedCoverageSymlinkInsideEvidence(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "coverage.xml")
+	link := filepath.Join(root, "app", "build", "reports", "jacoco", "report.xml")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("<report/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	relative, err := Write(root, model.Report{RunID: "escaped-link", Project: &model.Project{Name: "Example", Path: root}, Checks: []model.CheckResult{{ID: "android-coverage", Status: model.Fail, Evidence: []model.Evidence{{Type: "coverage-report", Path: link}}}}})
+	if err != nil {
+		t.Fatalf("escaped coverage symlink should produce bounded evidence: %v", err)
+	}
+	marker := filepath.Join(root, filepath.FromSlash(relative), "artifacts", "android-coverage-not-copied.txt")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("missing boundary marker: %v", err)
+	}
+}

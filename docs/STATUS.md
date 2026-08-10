@@ -86,3 +86,5 @@ Do not turn an unavailable evidence producer into `PASS`.
 ## Control-plane completion notes
 
 Dependency evidence remains `NOT_TESTED` when supported Gradle evidence or OSV Scanner is unavailable. Evidence writing validates canonical project containment. Session state is atomic and stored outside project repositories. Windows startup and manual recovery are provided by `scripts/devctl-startup.ps1` and `scripts/devctl-recovery.ps1`. `devctl handoff` emits bounded failure evidence without changing deterministic statuses.
+
+If a generated coverage report is a link whose canonical target escapes the project, the coverage result remains truthful but the XML is not copied; a bounded `*-not-copied.txt` marker is retained inside evidence instead of following the link.

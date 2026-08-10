@@ -76,7 +76,11 @@ func Write(projectPath string, report model.Report) (string, error) {
 				source = filepath.Join(canonicalProject, source)
 			}
 			if err := ensureContainedFile(source, canonicalProject); err != nil {
-				return "", fmt.Errorf("copy coverage evidence: %w", err)
+				marker := filepath.Join(root, "artifacts", name+"-not-copied.txt")
+				if writeErr := os.WriteFile(marker, []byte("Coverage artifact was not copied because its canonical target was outside the permitted project boundary.\n"), 0o600); writeErr != nil {
+					return "", fmt.Errorf("write coverage boundary marker: %w", writeErr)
+				}
+				continue
 			}
 			data, err := os.ReadFile(source)
 			if err != nil {
