@@ -67,3 +67,15 @@ func TestWriteCopiesCoverageReportArtifact(t *testing.T) {
 		t.Fatalf("unexpected coverage artifact: %q", data)
 	}
 }
+
+func TestWriteRejectsSymlinkedEvidenceDirectory(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".devctl")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, err := Write(root, model.Report{RunID: "escape", Project: &model.Project{Name: "Example"}})
+	if err == nil {
+		t.Fatal("expected symlinked evidence path to be rejected")
+	}
+}

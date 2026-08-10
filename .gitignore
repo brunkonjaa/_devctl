@@ -2,3 +2,6 @@
 /devctl
 *.test
 .devctl/
+devctl.exe
+.devctl/bin/
+.devctl/evidence/

@@ -11,8 +11,25 @@ import (
 )
 
 func Write(projectPath string, report model.Report) (string, error) {
+	canonicalProject, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve project path: %w", err)
+	}
+	projectInfo, err := os.Stat(canonicalProject)
+	if err != nil || !projectInfo.IsDir() {
+		return "", fmt.Errorf("project path is not a directory")
+	}
 	relativeRoot := filepath.Join(".devctl", "evidence", report.RunID)
-	root := filepath.Join(projectPath, relativeRoot)
+	if report.RunID == "" || filepath.Base(report.RunID) != report.RunID || strings.ContainsAny(report.RunID, `\\/:`) {
+		return "", fmt.Errorf("invalid evidence run id")
+	}
+	root := filepath.Join(canonicalProject, relativeRoot)
+	if err := ensureContainedDirectory(filepath.Join(canonicalProject, ".devctl"), canonicalProject); err != nil {
+		return "", err
+	}
+	if err := ensureContainedDirectory(filepath.Join(canonicalProject, ".devctl", "evidence"), canonicalProject); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(filepath.Join(root, "checks"), 0o700); err != nil {
 		return "", err
 	}
@@ -56,7 +73,10 @@ func Write(projectPath string, report model.Report) (string, error) {
 			}
 			source := item.Path
 			if !filepath.IsAbs(source) {
-				source = filepath.Join(projectPath, source)
+				source = filepath.Join(canonicalProject, source)
+			}
+			if err := ensureContainedFile(source, canonicalProject); err != nil {
+				return "", fmt.Errorf("copy coverage evidence: %w", err)
 			}
 			data, err := os.ReadFile(source)
 			if err != nil {
@@ -68,6 +88,63 @@ func Write(projectPath string, report model.Report) (string, error) {
 		}
 	}
 	return filepath.ToSlash(relativeRoot), nil
+}
+
+func ensureContainedDirectory(path, root string) error {
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("evidence directory is not a normal directory: %s", path)
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.Mkdir(path, 0o700); err != nil && !os.IsExist(err) {
+			return err
+		}
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("evidence directory could not be contained: %s", path)
+		}
+	} else {
+		return err
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	if !contained(canonical, canonicalRoot) {
+		return fmt.Errorf("evidence path escapes project: %s", path)
+	}
+	return nil
+}
+
+func ensureContainedFile(path, root string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+		return fmt.Errorf("evidence source is not a regular file: %s", path)
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	if !contained(canonical, canonicalRoot) {
+		return fmt.Errorf("evidence source escapes project: %s", path)
+	}
+	return nil
+}
+
+func contained(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
 
 func writeJSON(path string, value any) error {

@@ -18,6 +18,8 @@ type CommandID string
 
 const (
 	GitStatus       CommandID = "git-status"
+	GitBranch       CommandID = "git-branch"
+	GitCommit       CommandID = "git-commit"
 	JavaVersion     CommandID = "java-version"
 	GradleBuild     CommandID = "gradle-build"
 	GradleUnitTests CommandID = "gradle-unit-tests"
@@ -45,6 +47,8 @@ type TimeoutPolicy struct {
 
 var allowed = map[CommandID]Spec{
 	GitStatus:       {ID: GitStatus, Program: "git", Args: []string{"status", "--short", "--branch"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitBranch:       {ID: GitBranch, Program: "git", Args: []string{"branch", "--show-current"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitCommit:       {ID: GitCommit, Program: "git", Args: []string{"rev-parse", "HEAD"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
 	JavaVersion:     {ID: JavaVersion, Program: "java", Args: []string{"-version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
 	GradleBuild:     gradleSpec(GradleBuild, "assembleDebug", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
 	GradleUnitTests: gradleSpec(GradleUnitTests, "test", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),

@@ -78,3 +78,40 @@ type Report struct {
 	Checks        []CheckResult `json:"checks,omitempty"`
 	Overall       Status        `json:"overall"`
 }
+
+// SessionState is deliberately small and contains no credentials or raw logs.
+// It describes where work stopped; it is not verification evidence.
+type SessionState struct {
+	SchemaVersion string    `json:"schema_version"`
+	Project       string    `json:"project"`
+	ProjectPath   string    `json:"project_path"`
+	Branch        string    `json:"branch,omitempty"`
+	LastCommit    string    `json:"last_commit,omitempty"`
+	CurrentTask   string    `json:"current_task,omitempty"`
+	LastResult    Status    `json:"last_result,omitempty"`
+	EvidencePath  string    `json:"evidence_path,omitempty"`
+	CIState       string    `json:"ci_state,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type FailurePacket struct {
+	SchemaVersion string        `json:"schema_version"`
+	RunID         string        `json:"run_id"`
+	Project       string        `json:"project,omitempty"`
+	Overall       Status        `json:"overall"`
+	DevctlVersion string        `json:"devctl_version,omitempty"`
+	DevctlCommit  string        `json:"devctl_commit,omitempty"`
+	EvidencePath  string        `json:"evidence_path,omitempty"`
+	Failures      []FailureItem `json:"failures"`
+	NextAction    string        `json:"next_action"`
+}
+
+type FailureItem struct {
+	CheckID       string    `json:"check_id"`
+	Status        Status    `json:"status"`
+	Blocking      bool      `json:"blocking"`
+	Summary       string    `json:"summary"`
+	Reason        string    `json:"reason,omitempty"`
+	EvidencePaths []string  `json:"evidence_paths,omitempty"`
+	Findings      []Finding `json:"findings,omitempty"`
+}
