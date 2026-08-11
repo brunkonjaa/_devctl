@@ -187,8 +187,8 @@ type jacocoCounter struct {
 }
 
 func findCoverageReport(root string) (string, float64, error) {
-	var reportPath string
-	var totalMissed, totalCovered int
+	var preferredPath, fallbackPath string
+	var preferredMissed, preferredCovered, fallbackMissed, fallbackCovered int
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -208,16 +208,28 @@ func findCoverageReport(root string) (string, float64, error) {
 		}
 		for _, counter := range report.Counters {
 			if counter.Type == "LINE" {
-				reportPath = path
-				totalMissed = counter.Missed
-				totalCovered = counter.Covered
-				return nil
+				if strings.Contains(strings.ToLower(filepath.Base(path)), "jacocofocusedandroidtestreport") {
+					preferredPath = path
+					preferredMissed = counter.Missed
+					preferredCovered = counter.Covered
+				} else if fallbackPath == "" {
+					fallbackPath = path
+					fallbackMissed = counter.Missed
+					fallbackCovered = counter.Covered
+				}
+				break
 			}
 		}
 		return nil
 	})
 	if err != nil {
 		return "", 0, err
+	}
+	reportPath := preferredPath
+	totalMissed, totalCovered := preferredMissed, preferredCovered
+	if reportPath == "" {
+		reportPath = fallbackPath
+		totalMissed, totalCovered = fallbackMissed, fallbackCovered
 	}
 	if reportPath == "" || totalMissed+totalCovered == 0 {
 		return "", 0, fmt.Errorf("JaCoCo XML report was not found")

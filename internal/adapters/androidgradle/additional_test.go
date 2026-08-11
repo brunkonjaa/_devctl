@@ -56,6 +56,31 @@ func TestFindCoverageReportReadsJaCoCoLineCounter(t *testing.T) {
 	}
 }
 
+func TestFindCoverageReportPrefersFocusedAndroidReport(t *testing.T) {
+	root := t.TempDir()
+	unitReport := filepath.Join(root, "app", "build", "reports", "jacoco", "jacocoTestReport", "jacocoTestReport.xml")
+	focusedReport := filepath.Join(root, "app", "build", "reports", "jacoco", "jacocoFocusedAndroidTestReport", "jacocoFocusedAndroidTestReport.xml")
+	for _, report := range []string{unitReport, focusedReport} {
+		if err := os.MkdirAll(filepath.Dir(report), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(unitReport, []byte(`<report><counter type="LINE" missed="80" covered="20"/></report>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(focusedReport, []byte(`<report><counter type="LINE" missed="10" covered="90"/></report>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, percentage, err := findCoverageReport(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != focusedReport || percentage != 90 {
+		t.Fatalf("expected focused Android report, got path=%q percentage=%v", path, percentage)
+	}
+}
+
 func TestCoverageCheckAppliesThresholds(t *testing.T) {
 	for _, test := range []struct {
 		name     string
