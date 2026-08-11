@@ -124,6 +124,7 @@ func Apply(report *model.Report, config Config) {
 		if !ok {
 			continue
 		}
+		applyCoverageThreshold(check, checkPolicy)
 		if checkPolicy.Blocking != nil && check.Status != model.Pass {
 			check.Blocking = *checkPolicy.Blocking
 		}
@@ -131,6 +132,42 @@ func Apply(report *model.Report, config Config) {
 			check.Blocking = true
 		}
 	}
+}
+
+func applyCoverageThreshold(check *model.CheckResult, checkPolicy CheckPolicy) {
+	if check.ID != "android-coverage" || checkPolicy.Minimum == nil && checkPolicy.Preferred == nil {
+		return
+	}
+	percentage, ok := coveragePercentage(check.Evidence)
+	if !ok {
+		return
+	}
+
+	check.Blocking = false
+	switch {
+	case checkPolicy.Minimum != nil && percentage < *checkPolicy.Minimum:
+		check.Status = model.Fail
+		check.Blocking = true
+		check.Summary = fmt.Sprintf("Coverage %.1f%% is below blocking threshold %g%%", percentage, *checkPolicy.Minimum)
+	case checkPolicy.Preferred != nil && percentage < *checkPolicy.Preferred:
+		check.Status = model.Warn
+		check.Summary = fmt.Sprintf("Coverage %.1f%% is below preferred target %g%%", percentage, *checkPolicy.Preferred)
+	case checkPolicy.Preferred != nil:
+		check.Status = model.Pass
+		check.Summary = fmt.Sprintf("Coverage %.1f%% meets preferred target %g%%", percentage, *checkPolicy.Preferred)
+	case checkPolicy.Minimum != nil:
+		check.Status = model.Pass
+		check.Summary = fmt.Sprintf("Coverage %.1f%% meets minimum threshold %g%%", percentage, *checkPolicy.Minimum)
+	}
+}
+
+func coveragePercentage(evidence []model.Evidence) (float64, bool) {
+	for _, item := range evidence {
+		if item.Type == "coverage-report" && item.Coverage != nil {
+			return *item.Coverage, true
+		}
+	}
+	return 0, false
 }
 
 func unavailable(status model.Status) bool {

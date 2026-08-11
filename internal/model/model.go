@@ -29,9 +29,12 @@ type Project struct {
 }
 
 type Evidence struct {
-	Type   string `json:"type"`
-	Path   string `json:"path,omitempty"`
-	Detail string `json:"detail,omitempty"`
+	Type     string   `json:"type"`
+	Path     string   `json:"path,omitempty"`
+	Detail   string   `json:"detail,omitempty"`
+	Source   string   `json:"source,omitempty"`
+	Metric   string   `json:"metric,omitempty"`
+	Coverage *float64 `json:"coverage,omitempty"`
 }
 
 type Finding struct {

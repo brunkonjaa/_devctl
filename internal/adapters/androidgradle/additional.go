@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,35 +85,48 @@ func coverageCheck(project model.Project) scheduler.CheckSpec {
 }
 
 func collectCoverage(ctx context.Context, project model.Project) model.CheckResult {
+	report, err := findCoverageReport(project.Path)
+	if err == nil {
+		return coverageResult(project, report, "")
+	}
+	if !errors.Is(err, errCoverageReportNotFound) {
+		return model.CheckResult{ID: "android-coverage", Status: model.Error, Summary: "Coverage evidence could not be read", Reason: err.Error()}
+	}
 	if !coverageConfigured(project.Path) {
 		return model.CheckResult{ID: "android-coverage", Status: model.NotTested, Summary: "Coverage collection not tested", Reason: "JaCoCo configuration or a coverage report was not found"}
 	}
+
 	result := commandCheck(ctx, project, runner.GradleCoverage, "Coverage report generated")
 	if result.Status != model.Pass {
+		result.ID = "android-coverage"
 		return result
 	}
-	reportPath, percentage, err := findCoverageReport(project.Path)
+	report, err = findCoverageReport(project.Path)
 	if err != nil {
-		return model.CheckResult{ID: "android-coverage", Status: model.NotTested, Summary: "Coverage collection not tested", Reason: err.Error(), RawOutput: result.RawOutput}
+		if errors.Is(err, errCoverageReportNotFound) {
+			return model.CheckResult{ID: "android-coverage", Status: model.NotTested, Summary: "Coverage collection not tested", Reason: err.Error(), RawOutput: result.RawOutput}
+		}
+		return model.CheckResult{ID: "android-coverage", Status: model.Error, Summary: "Coverage evidence could not be read", Reason: err.Error(), RawOutput: result.RawOutput}
 	}
-	result.Evidence = append(result.Evidence, model.Evidence{Type: "coverage-report", Path: reportPath, Detail: fmt.Sprintf("line coverage %.1f%%", percentage)})
-	result.Findings = []model.Finding{{FindingID: "COV-LINE", Severity: "info", Issue: fmt.Sprintf("line coverage %.1f%%", percentage), Action: "maintain or improve test coverage", EvidencePath: reportPath, Source: "jacoco", ToolVersion: "unknown", Project: project.Name}}
-	applyCoverageThreshold(&result, percentage)
-	return result
+	return coverageResult(project, report, result.RawOutput)
 }
 
-func applyCoverageThreshold(result *model.CheckResult, percentage float64) {
-	switch {
-	case percentage < 70:
-		result.Status = model.Fail
-		result.Blocking = true
-		result.Summary = fmt.Sprintf("Coverage %.1f%% is below blocking threshold 70%%", percentage)
-	case percentage < 80:
-		result.Status = model.Warn
-		result.Summary = fmt.Sprintf("Coverage %.1f%% is below preferred target 80%%", percentage)
-	default:
-		result.Status = model.Pass
-		result.Summary = fmt.Sprintf("Coverage %.1f%% meets preferred target 80%%", percentage)
+func coverageResult(project model.Project, report coverageReport, rawOutput string) model.CheckResult {
+	percentage := report.Percentage
+	return model.CheckResult{
+		ID:        "android-coverage",
+		Status:    model.Pass,
+		Summary:   fmt.Sprintf("Coverage evidence collected: %.1f%% line coverage", percentage),
+		RawOutput: rawOutput,
+		Evidence: []model.Evidence{{
+			Type:     "coverage-report",
+			Path:     report.Path,
+			Detail:   fmt.Sprintf("line coverage %.1f%%", percentage),
+			Source:   report.Source,
+			Metric:   "line",
+			Coverage: &percentage,
+		}},
+		Findings: []model.Finding{{FindingID: "COV-LINE", Severity: "info", Issue: fmt.Sprintf("line coverage %.1f%%", percentage), Action: "maintain or improve test coverage", EvidencePath: report.Path, Source: report.Source, ToolVersion: "unknown", Project: project.Name}},
 	}
 }
 
@@ -131,6 +145,10 @@ func coverageConfigured(root string) bool {
 		return true
 	}
 	_, err = os.Stat(filepath.Join(root, "app", "build", "reports", "jacoco"))
+	if err == nil {
+		return true
+	}
+	_, err = os.Stat(filepath.Join(root, "app", "build", "reports", "coverage", "androidTest"))
 	return err == nil
 }
 
@@ -186,9 +204,55 @@ type jacocoCounter struct {
 	Covered int    `xml:"covered,attr"`
 }
 
-func findCoverageReport(root string) (string, float64, error) {
-	var preferredPath, fallbackPath string
-	var preferredMissed, preferredCovered, fallbackMissed, fallbackCovered int
+type coverageReport struct {
+	Path       string
+	Source     string
+	Percentage float64
+}
+
+type coverageCandidate struct {
+	Path   string
+	Source string
+}
+
+type jacocoClass struct {
+	Name     string          `xml:"name,attr"`
+	Counters []jacocoCounter `xml:"counter"`
+}
+
+type jacocoPackage struct {
+	Classes []jacocoClass `xml:"class"`
+}
+
+type jacocoReportXML struct {
+	XMLName  xml.Name        `xml:"report"`
+	Packages []jacocoPackage `xml:"package"`
+	Counters []jacocoCounter `xml:"counter"`
+}
+
+var errCoverageReportNotFound = errors.New("JaCoCo XML report was not found")
+
+func findCoverageReport(root string) (coverageReport, error) {
+	groups := []struct {
+		Pattern string
+		Source  string
+	}{
+		{Pattern: filepath.Join(root, "app", "build", "reports", "coverage", "androidTest", "*", "connected", "report.xml"), Source: "agp-android-instrumented"},
+		{Pattern: filepath.Join(root, "app", "build", "reports", "jacoco", "jacocoFocusedAndroidTestReport", "jacocoFocusedAndroidTestReport.xml"), Source: "gradle-focused-android"},
+		{Pattern: filepath.Join(root, "app", "build", "reports", "jacoco", "jacocoTestReport", "jacocoTestReport.xml"), Source: "gradle-jvm-unit"},
+	}
+
+	for _, group := range groups {
+		matches, err := filepath.Glob(group.Pattern)
+		if err != nil {
+			return coverageReport{}, err
+		}
+		for _, path := range matches {
+			return readCoverageReport(path, group.Source)
+		}
+	}
+
+	var legacyCandidates []coverageCandidate
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -196,43 +260,73 @@ func findCoverageReport(root string) (string, float64, error) {
 		if info.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".xml") || !strings.Contains(strings.ToLower(path), "jacoco") {
 			return nil
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		var report struct {
-			Counters []jacocoCounter `xml:"counter"`
-		}
-		if decodeErr := xml.Unmarshal(data, &report); decodeErr != nil {
-			return nil
-		}
-		for _, counter := range report.Counters {
-			if counter.Type == "LINE" {
-				if strings.Contains(strings.ToLower(filepath.Base(path)), "jacocofocusedandroidtestreport") {
-					preferredPath = path
-					preferredMissed = counter.Missed
-					preferredCovered = counter.Covered
-				} else if fallbackPath == "" {
-					fallbackPath = path
-					fallbackMissed = counter.Missed
-					fallbackCovered = counter.Covered
-				}
-				break
-			}
-		}
+		legacyCandidates = append(legacyCandidates, coverageCandidate{Path: path, Source: "gradle-jacoco-legacy"})
 		return nil
 	})
 	if err != nil {
-		return "", 0, err
+		return coverageReport{}, err
 	}
-	reportPath := preferredPath
-	totalMissed, totalCovered := preferredMissed, preferredCovered
-	if reportPath == "" {
-		reportPath = fallbackPath
-		totalMissed, totalCovered = fallbackMissed, fallbackCovered
+	for _, candidate := range legacyCandidates {
+		report, readErr := readCoverageReport(candidate.Path, candidate.Source)
+		if readErr == nil {
+			return report, nil
+		}
 	}
-	if reportPath == "" || totalMissed+totalCovered == 0 {
-		return "", 0, fmt.Errorf("JaCoCo XML report was not found")
+	return coverageReport{}, errCoverageReportNotFound
+}
+
+func readCoverageReport(path, source string) (coverageReport, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return coverageReport{}, fmt.Errorf("read coverage report %s: %w", path, err)
 	}
-	return reportPath, float64(totalCovered) / float64(totalMissed+totalCovered) * 100, nil
+	var report jacocoReportXML
+	if err := xml.Unmarshal(data, &report); err != nil {
+		return coverageReport{}, fmt.Errorf("parse coverage report %s: %w", path, err)
+	}
+
+	missed, covered, classLines := focusedClassLineTotals(report.Packages)
+	if !classLines {
+		missed, covered = rootLineTotals(report.Counters)
+	}
+	if missed+covered == 0 {
+		return coverageReport{}, fmt.Errorf("coverage report %s has no countable LINE evidence", path)
+	}
+	return coverageReport{Path: path, Source: source, Percentage: float64(covered) / float64(missed+covered) * 100}, nil
+}
+
+func focusedClassLineTotals(packages []jacocoPackage) (missed, covered int, found bool) {
+	for _, pkg := range packages {
+		for _, class := range pkg.Classes {
+			for _, counter := range class.Counters {
+				if counter.Type != "LINE" {
+					continue
+				}
+				found = true
+				if generatedAndroidClass(class.Name) {
+					continue
+				}
+				missed += counter.Missed
+				covered += counter.Covered
+			}
+		}
+	}
+	return missed, covered, found
+}
+
+func rootLineTotals(counters []jacocoCounter) (missed, covered int) {
+	for _, counter := range counters {
+		if counter.Type == "LINE" {
+			return counter.Missed, counter.Covered
+		}
+	}
+	return 0, 0
+}
+
+func generatedAndroidClass(name string) bool {
+	if slash := strings.LastIndex(name, "/"); slash >= 0 {
+		name = name[slash+1:]
+	}
+	outerName := strings.SplitN(name, "$", 2)[0]
+	return outerName == "R" || outerName == "BuildConfig" || outerName == "Manifest" || strings.Contains(outerName, "_Impl")
 }
