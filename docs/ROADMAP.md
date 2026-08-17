@@ -63,6 +63,7 @@ Stage 7 is a multi-project platform milestone. The core must work for `_devctl`,
 
 ### Stage 7C — Controlled optional agent worker
 
+- First slice complete: define the control contract and accept one strict `worker verify` request that calls the existing deterministic verification path and returns a versioned structured result.
 - Add explicit approval before file modification.
 - Send bounded task and failure packets to Codex.
 - Route `FAIL` back to Codex and stop on `ERROR`.

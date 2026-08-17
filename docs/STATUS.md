@@ -16,6 +16,8 @@ Stage 7C — Controlled optional agent worker
 
 AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
 
+The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). The first vertical slice is implemented as a strict `worker verify` request/result envelope over the existing deterministic verification path. Iterative repair, arbitrary commands, and knowledge-vault integration have not started.
+
 ## Completed stages
 
 ### Stage 1 — Core verification engine
