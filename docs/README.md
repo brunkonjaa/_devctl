@@ -14,6 +14,7 @@ Daily operations:
 
 - `devctl verify <project>` runs deterministic checks and records session state.
 - `devctl verify --live <project>` renders the same verification events to stderr while checks run.
+- `devctl worker verify [--live] --request <request.json>` accepts one versioned external-worker verification request and returns a structured result; `--live` renders the same deterministic events to stderr.
 - `devctl session resume` shows the last saved project state.
 - `scripts/devctl-startup.ps1 -OpenWorkspace` is the Windows startup entry point.
 - `scripts/devctl-recovery.ps1 -ProjectPath <path>` records a project manually after startup recovery.
@@ -26,6 +27,8 @@ Windows setup:
 3. Use `scripts/devctl-recovery.ps1 -ProjectPath <path>` when the saved path is missing or stale.
 
 `devctl version --json` reports the devctl version, source commit, dirty-source state and Go version. The Windows startup task must use the bootstrapper rather than an arbitrary executable copied into the repository.
+
+The Stage 7C worker boundary is defined in [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). The first slice accepts only `operation: verify`; it does not accept commands, shell text, thresholds, check overrides, retries, or repair instructions.
 
 Session state is stored under the user configuration directory, normally `%APPDATA%\\devctl\\session.json`. It is separate from `.devctl/evidence/`, which remains project-local verification evidence.
 

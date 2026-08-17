@@ -21,6 +21,7 @@ import (
 	"devctl/internal/session"
 	"devctl/internal/verify"
 	"devctl/internal/version"
+	"devctl/internal/worker"
 	"devctl/internal/workflow"
 )
 
@@ -43,6 +44,8 @@ func main() {
 		exitCode = discoverCommand(os.Args[2:])
 	case "verify":
 		exitCode = verifyCommand(os.Args[2:])
+	case "worker":
+		exitCode = workerCommand(os.Args[2:])
 	case "session":
 		exitCode = sessionCommand(os.Args[2:])
 	case "handoff":
@@ -109,7 +112,87 @@ func verifyCommand(args []string) int {
 		return exitInternal
 	}
 	projectPath := flags.Arg(0)
+	report, exitCode, executionErr := executeVerification(projectPath, *liveOutput)
+	if executionErr != nil {
+		return exitCode
+	}
+	_ = recordVerificationSession(report, projectPath)
+	if *jsonOutput {
+		if code := printJSON(report); code != exitOK {
+			return code
+		}
+	} else {
+		printReport(report)
+	}
+	return exitCode
+}
+
+func workerCommand(args []string) int {
+	if len(args) == 0 || args[0] != "verify" {
+		fmt.Fprintln(os.Stderr, "worker requires the verify operation")
+		return exitInternal
+	}
+	flags := flag.NewFlagSet("worker verify", flag.ContinueOnError)
+	requestPath := flags.String("request", "", "path to a versioned worker request JSON file")
+	liveOutput := flags.Bool("live", false, "render deterministic verification events to stderr")
+	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 || strings.TrimSpace(*requestPath) == "" {
+		fmt.Fprintln(os.Stderr, "worker verify requires --request <path>")
+		return exitInternal
+	}
+	request, err := worker.ReadRequest(*requestPath)
+	if err != nil {
+		result := worker.RejectedResult("", "verify", "invalid_request", err.Error())
+		if printJSON(result) != exitOK {
+			return exitInternal
+		}
+		return result.ExitCode
+	}
+	projectEntry, resolveErr := registry.Resolve(request.ProjectID)
+	if resolveErr != nil {
+		code := "project_not_approved"
+		if errors.Is(resolveErr, registry.ErrProjectIdentityMismatch) {
+			code = "project_identity_mismatch"
+		}
+		result := worker.RejectedResult(request.RequestID, request.Operation, code, resolveErr.Error())
+		if printJSON(result) != exitOK {
+			return exitInternal
+		}
+		return result.ExitCode
+	}
+	startedAt := time.Now().UTC()
+	report, exitCode, executionErr := executeVerification(projectEntry.Path, *liveOutput, request.ProjectID)
+	if executionErr != nil {
+		code := "verification_unavailable"
+		if errors.Is(executionErr, registry.ErrActiveRun) {
+			code = "active_run"
+		} else if errors.Is(executionErr, registry.ErrProjectIdentityMismatch) {
+			code = "project_identity_mismatch"
+		}
+		result := worker.RejectedResult(request.RequestID, request.Operation, code, executionErr.Error())
+		if printJSON(result) != exitOK {
+			return exitInternal
+		}
+		return result.ExitCode
+	}
+	finishedAt := time.Now().UTC()
+	_ = recordVerificationSession(report, projectEntry.Path)
+	result := worker.NewVerificationResult(request, report, exitCode, startedAt, finishedAt)
+	if printJSON(result) != exitOK {
+		return exitInternal
+	}
+	return exitCode
+}
+
+func executeVerification(projectPath string, liveOutput bool, expectedProjectIDs ...string) (model.Report, int, error) {
 	projectEntry, registryDetectErr := registry.DetectProject(projectPath)
+	if len(expectedProjectIDs) > 0 {
+		if registryDetectErr != nil {
+			return model.Report{}, exitInternal, registryDetectErr
+		}
+		if projectEntry.ProjectID != expectedProjectIDs[0] {
+			return model.Report{}, exitInternal, fmt.Errorf("%w: registered %q, current %q", registry.ErrProjectIdentityMismatch, expectedProjectIDs[0], projectEntry.ProjectID)
+		}
+	}
 	runID := verify.NewRunID()
 	registryStarted := false
 	if registryDetectErr != nil {
@@ -121,14 +204,14 @@ func verifyCommand(args []string) int {
 		if err := registry.Begin(projectEntry, runID, os.Getpid()); err != nil {
 			fmt.Fprintf(os.Stderr, "registry run state unavailable: %v\n", err)
 			if errors.Is(err, registry.ErrActiveRun) {
-				return exitInternal
+				return model.Report{}, exitInternal, err
 			}
 		} else {
 			registryStarted = true
 		}
 	}
 	var report model.Report
-	if *liveOutput {
+	if liveOutput {
 		recorder, recorderErr := workflow.New(projectPath)
 		if recorderErr != nil {
 			fmt.Fprintf(os.Stderr, "live workflow journal unavailable: %v\n", recorderErr)
@@ -153,15 +236,7 @@ func verifyCommand(args []string) int {
 			fmt.Fprintf(os.Stderr, "registry completion unavailable: %v\n", err)
 		}
 	}
-	_ = recordVerificationSession(report, projectPath)
-	if *jsonOutput {
-		if code := printJSON(report); code != exitOK {
-			return code
-		}
-	} else {
-		printReport(report)
-	}
-	return verify.ExitCode(report)
+	return report, verify.ExitCode(report), nil
 }
 
 func sessionCommand(args []string) int {
@@ -292,6 +367,7 @@ func usage() {
 	fmt.Printf("Usage: %s version [--json]\n", program)
 	fmt.Printf("Usage: %s discover [--json] [root]\n", program)
 	fmt.Printf("       %s verify [--json] [--live] <project>\n", program)
+	fmt.Printf("       %s worker verify [--live] --request <request.json>\n", program)
 	fmt.Printf("       %s session record|status|resume ...\n", program)
 	fmt.Printf("       %s handoff [--json] <report.json>\n", program)
 }

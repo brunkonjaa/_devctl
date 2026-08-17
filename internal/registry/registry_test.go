@@ -2,6 +2,7 @@ package registry
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,46 @@ func TestRegisterPersistsProjectMetadata(t *testing.T) {
 	}
 	if len(got.Technologies) != 1 || got.Technologies[0] != "go" {
 		t.Fatalf("unexpected technologies: %#v", got.Technologies)
+	}
+}
+
+func TestResolveRequiresRegisteredProjectIdentity(t *testing.T) {
+	t.Setenv("DEVCTL_STATE_DIR", t.TempDir())
+	projectDir := makeProject(t, "approved", "project-approved")
+	entry, err := DetectProject(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Register(entry); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := Resolve("project-approved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.ProjectID != entry.ProjectID || resolved.Path != mustCanonical(t, projectDir) {
+		t.Fatalf("unexpected resolved project: %+v", resolved)
+	}
+	if _, err := Resolve("unapproved-project"); err == nil {
+		t.Fatal("expected unregistered project identity to be rejected")
+	}
+}
+
+func TestResolveRejectsCurrentIdentityMismatch(t *testing.T) {
+	t.Setenv("DEVCTL_STATE_DIR", t.TempDir())
+	projectDir := makeProject(t, "changed", "project-alpha")
+	entry, err := DetectProject(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Register(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "devctl.json"), []byte("{\n  \"version\": \"1\",\n  \"project_id\": \"project-beta\"\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve("project-alpha"); !errors.Is(err, ErrProjectIdentityMismatch) {
+		t.Fatalf("expected identity mismatch, got %v", err)
 	}
 }
 

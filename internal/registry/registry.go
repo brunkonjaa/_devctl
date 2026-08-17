@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ const (
 )
 
 var ErrActiveRun = errors.New("project already has an active run")
+var ErrProjectIdentityMismatch = errors.New("registered project identity does not match current project identity")
 
 type Registry struct {
 	SchemaVersion string                  `json:"schema_version"`
@@ -170,6 +172,36 @@ func Load() (Registry, error) {
 	return result, err
 }
 
+func Resolve(projectID string) (ProjectEntry, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ProjectEntry{}, errors.New("project_id must not be empty")
+	}
+	registry, err := Load()
+	if err != nil {
+		return ProjectEntry{}, err
+	}
+	entry, ok := registry.Projects[projectID]
+	if !ok {
+		return ProjectEntry{}, fmt.Errorf("project_id %q is not registered", projectID)
+	}
+	canonical, err := canonicalPath(entry.Path)
+	if err != nil {
+		return ProjectEntry{}, fmt.Errorf("registered project path is unavailable: %w", err)
+	}
+	if !samePath(canonical, entry.Path) {
+		return ProjectEntry{}, fmt.Errorf("registered project path changed; re-register project_id %q", projectID)
+	}
+	current, err := DetectProject(entry.Path)
+	if err != nil {
+		return ProjectEntry{}, fmt.Errorf("registered project identity unavailable: %w", err)
+	}
+	if current.ProjectID != projectID {
+		return ProjectEntry{}, fmt.Errorf("%w: registered %q, current %q", ErrProjectIdentityMismatch, projectID, current.ProjectID)
+	}
+	return entry, nil
+}
+
 func update(mutator func(*Registry) error) error {
 	return withLock(func() error {
 		registry, err := loadLocked()
@@ -289,6 +321,13 @@ func canonicalPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(resolved), nil
+}
+
+func samePath(left, right string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 func normalizeStale(registry *Registry) bool {
