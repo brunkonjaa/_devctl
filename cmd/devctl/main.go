@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,11 +12,16 @@ import (
 	"time"
 
 	"devctl/internal/discovery"
+	"devctl/internal/events"
 	"devctl/internal/handoff"
+	"devctl/internal/live"
 	"devctl/internal/model"
+	"devctl/internal/registry"
 	"devctl/internal/runner"
 	"devctl/internal/session"
 	"devctl/internal/verify"
+	"devctl/internal/version"
+	"devctl/internal/workflow"
 )
 
 const (
@@ -31,6 +37,8 @@ func main() {
 
 	var exitCode int
 	switch os.Args[1] {
+	case "version":
+		exitCode = versionCommand(os.Args[2:])
 	case "discover":
 		exitCode = discoverCommand(os.Args[2:])
 	case "verify":
@@ -45,6 +53,21 @@ func main() {
 		exitCode = exitInternal
 	}
 	os.Exit(exitCode)
+}
+
+func versionCommand(args []string) int {
+	flags := flag.NewFlagSet("version", flag.ContinueOnError)
+	jsonOutput := flags.Bool("json", false, "emit JSON")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "version accepts only --json")
+		return exitInternal
+	}
+	info := version.Current()
+	if *jsonOutput {
+		return printJSON(info)
+	}
+	fmt.Printf("devctl %s\ncommit: %s\ndirty: %t\ngo: %s\n", info.Version, info.Commit, info.Dirty, info.GoVersion)
+	return exitOK
 }
 
 func discoverCommand(args []string) int {
@@ -77,6 +100,7 @@ func discoverCommand(args []string) int {
 func verifyCommand(args []string) int {
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	jsonOutput := flags.Bool("json", false, "emit JSON")
+	liveOutput := flags.Bool("live", false, "render live verification events to stderr")
 	if err := flags.Parse(args); err != nil {
 		return exitInternal
 	}
@@ -84,8 +108,52 @@ func verifyCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "verify requires one project path")
 		return exitInternal
 	}
-	report := verify.Project(context.Background(), flags.Arg(0))
-	_ = recordVerificationSession(report, flags.Arg(0))
+	projectPath := flags.Arg(0)
+	projectEntry, registryDetectErr := registry.DetectProject(projectPath)
+	runID := verify.NewRunID()
+	registryStarted := false
+	if registryDetectErr != nil {
+		fmt.Fprintf(os.Stderr, "registry unavailable: %v\n", registryDetectErr)
+	} else {
+		if err := registry.Register(projectEntry); err != nil {
+			fmt.Fprintf(os.Stderr, "registry update unavailable: %v\n", err)
+		}
+		if err := registry.Begin(projectEntry, runID, os.Getpid()); err != nil {
+			fmt.Fprintf(os.Stderr, "registry run state unavailable: %v\n", err)
+			if errors.Is(err, registry.ErrActiveRun) {
+				return exitInternal
+			}
+		} else {
+			registryStarted = true
+		}
+	}
+	var report model.Report
+	if *liveOutput {
+		recorder, recorderErr := workflow.New(projectPath)
+		if recorderErr != nil {
+			fmt.Fprintf(os.Stderr, "live workflow journal unavailable: %v\n", recorderErr)
+		}
+		renderer := live.NewRenderer(os.Stderr)
+		asyncRenderer := events.NewAsyncSink(renderer, 256)
+		subscribers := []events.Sink{asyncRenderer}
+		if recorder != nil {
+			subscribers = append(subscribers, recorder)
+		}
+		stream := events.NewStream(subscribers...)
+		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{Sink: stream, RunID: runID})
+		asyncRenderer.Close()
+		if recorder != nil {
+			_ = recorder.Close()
+		}
+	} else {
+		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{RunID: runID})
+	}
+	if registryStarted {
+		if err := registry.Finish(projectEntry.ProjectID, runID, string(report.Overall)); err != nil {
+			fmt.Fprintf(os.Stderr, "registry completion unavailable: %v\n", err)
+		}
+	}
+	_ = recordVerificationSession(report, projectPath)
 	if *jsonOutput {
 		if code := printJSON(report); code != exitOK {
 			return code
@@ -221,8 +289,9 @@ func technologyNames(project model.Project) string {
 
 func usage() {
 	program := filepath.Base(os.Args[0])
+	fmt.Printf("Usage: %s version [--json]\n", program)
 	fmt.Printf("Usage: %s discover [--json] [root]\n", program)
-	fmt.Printf("       %s verify [--json] <project>\n", program)
+	fmt.Printf("       %s verify [--json] [--live] <project>\n", program)
 	fmt.Printf("       %s session record|status|resume ...\n", program)
 	fmt.Printf("       %s handoff [--json] <report.json>\n", program)
 }

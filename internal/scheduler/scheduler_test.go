@@ -59,6 +59,27 @@ func TestRunSkipsDependantsAfterFailure(t *testing.T) {
 	}
 }
 
+func TestRunSkipsTransitiveDependantsAfterFailure(t *testing.T) {
+	var downstreamRan atomic.Bool
+	plan, err := BuildPlan([]CheckSpec{
+		{ID: "build", Run: func(context.Context) model.CheckResult {
+			return model.CheckResult{Status: model.Fail, Summary: "build failed"}
+		}},
+		{ID: "tests", Requires: []string{"build"}, Run: passCheck},
+		{ID: "coverage", Requires: []string{"tests"}, Run: func(context.Context) model.CheckResult {
+			downstreamRan.Store(true)
+			return model.CheckResult{Status: model.Pass}
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := Run(context.Background(), plan, 2)
+	if downstreamRan.Load() || results[1].Status != model.Skip || results[2].Status != model.Skip {
+		t.Fatalf("expected transitive dependency skips, got %#v", results)
+	}
+}
+
 func TestRunAllowsWarningsToContinue(t *testing.T) {
 	plan, err := BuildPlan([]CheckSpec{
 		{ID: "first", Run: func(context.Context) model.CheckResult { return model.CheckResult{Status: model.Warn} }},

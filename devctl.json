@@ -1,5 +1,6 @@
 {
   "project": "_devctl",
+  "project_id": "f2374b82-465b-4c60-8c4f-954738d5435a",
   "version": "1",
   "checks": {
     "go-environment": {"enabled": true, "required": true},

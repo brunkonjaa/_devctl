@@ -26,10 +26,22 @@ func TestProjectDetectsTechnologyAndGitStatus(t *testing.T) {
 	if report.Project == nil || len(report.Project.Technologies) != 1 {
 		t.Fatalf("expected detected project technology: %#v", report.Project)
 	}
-	if len(report.Checks) != 3 {
-		t.Fatalf("expected three checks, got %d", len(report.Checks))
+	if len(report.Checks) != 4 {
+		t.Fatalf("expected four checks including adapter support, got %d", len(report.Checks))
 	}
-	if report.Checks[1].Status != model.Error {
-		t.Fatalf("expected git error outside a repository, got %s", report.Checks[1].Status)
+	var gitStatus, adapterSupport model.CheckResult
+	for _, check := range report.Checks {
+		if check.ID == "git-status" {
+			gitStatus = check
+		}
+		if check.ID == "adapter-support" {
+			adapterSupport = check
+		}
+	}
+	if gitStatus.Status != model.Error {
+		t.Fatalf("expected git error outside a repository, got %s", gitStatus.Status)
+	}
+	if adapterSupport.Status != model.NotTested || !adapterSupport.Blocking {
+		t.Fatalf("expected unsupported technology to block verification, got %#v", adapterSupport)
 	}
 }

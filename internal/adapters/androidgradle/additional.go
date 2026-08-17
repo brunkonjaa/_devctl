@@ -39,7 +39,7 @@ func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 			if versionResult, versionErr := runner.Run(ctx, project.Path, runner.OsvScannerVersion); versionErr == nil {
 				toolVersion = strings.TrimSpace(versionResult.Output)
 			}
-			check := model.CheckResult{ID: "dependency-vulnerability-scan", RawOutput: result.Output, Evidence: []model.Evidence{{Type: "osv-json", Detail: "OSV-Scanner JSON output"}}}
+			check := model.CheckResult{ID: "dependency-vulnerability-scan", RawOutput: result.Output, OutputTruncated: result.OutputTruncated, Executable: result.Executable, Arguments: result.Arguments, EnvironmentProfile: result.EnvironmentProfile, EnvironmentKeys: result.EnvironmentKeys, Executions: executionList(result), Evidence: []model.Evidence{{Type: "osv-json", Detail: "OSV-Scanner JSON output"}}}
 			findings, parseErr := parseOSVFindings(result.Output)
 			if parseErr != nil {
 				check.Status = model.Error
@@ -52,7 +52,8 @@ func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 				check.Findings[index].ToolVersion = toolVersion
 				check.Findings[index].Project = project.Name
 			}
-			if err != nil {
+			scanReportedFindings := result.Started && result.TerminationReason == "completed" && result.ExitCode == 1 && len(findings) > 0
+			if err != nil && !scanReportedFindings {
 				check.Status = model.Error
 				check.Summary = "Dependency vulnerability scan did not complete"
 				check.Reason = err.Error()
@@ -62,6 +63,9 @@ func dependencyVulnerabilityCheck(project model.Project) scheduler.CheckSpec {
 				check.Status = model.Warn
 				check.Summary = fmt.Sprintf("%d known dependency vulnerabilities found", len(findings))
 				check.Reason = "Findings are advisory until project policy assigns blocking thresholds"
+				if scanReportedFindings {
+					check.Reason += "; scanner exit code 1 indicates findings"
+				}
 				return check
 			}
 			check.Status = model.Pass
@@ -248,6 +252,9 @@ func findCoverageReport(root string) (coverageReport, error) {
 			return coverageReport{}, err
 		}
 		for _, path := range matches {
+			if err := validateCoveragePath(path, root); err != nil {
+				return coverageReport{}, err
+			}
 			return readCoverageReport(path, group.Source)
 		}
 	}
@@ -267,12 +274,39 @@ func findCoverageReport(root string) (coverageReport, error) {
 		return coverageReport{}, err
 	}
 	for _, candidate := range legacyCandidates {
+		if err := validateCoveragePath(candidate.Path, root); err != nil {
+			return coverageReport{}, err
+		}
 		report, readErr := readCoverageReport(candidate.Path, candidate.Source)
 		if readErr == nil {
 			return report, nil
 		}
 	}
 	return coverageReport{}, errCoverageReportNotFound
+}
+
+func validateCoveragePath(path, root string) error {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve coverage project boundary: %w", err)
+	}
+	canonicalPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("resolve coverage report %s: %w", path, err)
+	}
+	if !containedPath(canonicalPath, canonicalRoot) {
+		return fmt.Errorf("coverage report escapes project boundary: %s", path)
+	}
+	info, err := os.Stat(canonicalPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("coverage report is not a regular file: %s", path)
+	}
+	return nil
+}
+
+func containedPath(path, root string) bool {
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)) && !filepath.IsAbs(relative)
 }
 
 func readCoverageReport(path, source string) (coverageReport, error) {

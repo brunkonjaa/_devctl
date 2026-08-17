@@ -2,11 +2,68 @@ package policy
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"devctl/internal/model"
 	"devctl/internal/scheduler"
 )
+
+func TestLoadValidatesVersionedAutomationConfiguration(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "devctl.json"), []byte(`{
+  "version": "1",
+  "automation": {
+    "control_documents": ["docs/README.md"],
+    "verification_profile": "go",
+    "max_agent_attempts": 3
+  }
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Automation.VerificationProfile != "go" || config.Automation.MaxAgentAttempts != 3 {
+		t.Fatalf("unexpected automation configuration: %#v", config.Automation)
+	}
+}
+
+func TestLoadPreservesCommittedProjectIdentity(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "devctl.json"), []byte(`{"version":"1","project_id":"project-1234"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Load(root)
+	if err != nil || config.ProjectID != "project-1234" {
+		t.Fatalf("expected committed project identity, got %#v, %v", config, err)
+	}
+}
+
+func TestLoadRejectsUnsupportedConfigurationVersion(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "devctl.json"), []byte(`{"version":"2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(root); err == nil {
+		t.Fatal("expected unsupported configuration version to be rejected")
+	}
+}
+
+func TestLoadRejectsEscapingControlDocument(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "devctl.json"), []byte(`{
+  "version": "1",
+  "automation": {"control_documents": ["../outside.md"]}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(root); err == nil {
+		t.Fatal("expected escaping control document to be rejected")
+	}
+}
 
 func TestFilterChecksRemovesDisabledDependants(t *testing.T) {
 	disabled := false
@@ -17,6 +74,31 @@ func TestFilterChecksRemovesDisabledDependants(t *testing.T) {
 	filtered := FilterChecks(checks, Config{Checks: map[string]CheckPolicy{"build": {Enabled: &disabled}}})
 	if len(filtered) != 0 {
 		t.Fatalf("expected dependant checks to be removed, got %d", len(filtered))
+	}
+}
+
+func TestValidateRejectsRequiredDisabledCheck(t *testing.T) {
+	disabled := false
+	required := true
+	checks := []scheduler.CheckSpec{{ID: "go-test", Run: testCheck}}
+	if err := ValidateCheckConfiguration(checks, Config{Checks: map[string]CheckPolicy{"go-test": {Enabled: &disabled, Required: &required}}}); err == nil {
+		t.Fatal("expected required disabled check to be rejected")
+	}
+}
+
+func TestValidateRejectsInvalidThresholds(t *testing.T) {
+	minimum := 90.0
+	preferred := 80.0
+	checks := []scheduler.CheckSpec{{ID: "android-coverage", Run: testCheck}}
+	if err := ValidateCheckConfiguration(checks, Config{Checks: map[string]CheckPolicy{"android-coverage": {Minimum: &minimum, Preferred: &preferred}}}); err == nil {
+		t.Fatal("expected inverted coverage thresholds to be rejected")
+	}
+}
+
+func TestValidateRejectsUnknownProjectCheck(t *testing.T) {
+	checks := []scheduler.CheckSpec{{ID: "go-test", Run: testCheck}}
+	if err := ValidateCheckConfiguration(checks, Config{Checks: map[string]CheckPolicy{"made-up-check": {Enabled: boolPointer(true)}}}); err == nil {
+		t.Fatal("expected unknown configured check to be rejected")
 	}
 }
 
@@ -83,4 +165,8 @@ func TestApplyLeavesCoverageEvidenceWithoutNumericMetricUnchanged(t *testing.T) 
 
 func testCheck(context.Context) model.CheckResult {
 	return model.CheckResult{Status: model.Pass}
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }

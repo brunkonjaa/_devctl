@@ -41,9 +41,6 @@ func Write(projectPath string, report model.Report) (string, error) {
 	}
 
 	report.EvidencePath = filepath.ToSlash(relativeRoot)
-	if err := writeJSON(filepath.Join(root, "report.json"), report); err != nil {
-		return "", fmt.Errorf("write report: %w", err)
-	}
 	projectName := "unknown"
 	if report.Project != nil {
 		projectName = report.Project.Name
@@ -90,6 +87,9 @@ func Write(projectPath string, report model.Report) (string, error) {
 				return "", fmt.Errorf("write artifact %s: %w", check.ID, err)
 			}
 		}
+	}
+	if err := writeJSONAtomic(filepath.Join(root, "report.json"), report); err != nil {
+		return "", fmt.Errorf("write final report: %w", err)
 	}
 	return filepath.ToSlash(relativeRoot), nil
 }
@@ -166,6 +166,36 @@ func writeJSON(path string, value any) error {
 	}
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o600)
+}
+
+func writeJSONAtomic(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".report-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, path)
 }
 
 func safeName(value string) string {

@@ -10,7 +10,7 @@ import (
 )
 
 func FromReport(report model.Report) model.FailurePacket {
-	packet := model.FailurePacket{SchemaVersion: "1", RunID: report.RunID, Overall: report.Overall, DevctlVersion: report.DevctlVersion, DevctlCommit: report.DevctlCommit, EvidencePath: report.EvidencePath, NextAction: "Inspect the listed evidence, make a source change if needed, then run devctl verify again."}
+	packet := model.FailurePacket{SchemaVersion: "1", RunID: report.RunID, Overall: report.Overall, DevctlVersion: report.DevctlVersion, DevctlCommit: report.DevctlCommit, DevctlDirty: report.DevctlDirty, EvidencePath: report.EvidencePath, NextAction: "Inspect the listed evidence, make a source change if needed, then run devctl verify again."}
 	if report.Project != nil {
 		packet.Project = report.Project.Name
 	}

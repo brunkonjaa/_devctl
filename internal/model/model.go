@@ -25,6 +25,7 @@ type Technology struct {
 type Project struct {
 	Name         string       `json:"name"`
 	Path         string       `json:"path"`
+	Identity     string       `json:"identity"`
 	Technologies []Technology `json:"technologies"`
 }
 
@@ -51,19 +52,37 @@ type Finding struct {
 	Project      string `json:"project,omitempty"`
 }
 
+type Execution struct {
+	Executable         string            `json:"executable,omitempty"`
+	Arguments          []string          `json:"arguments,omitempty"`
+	EnvironmentProfile string            `json:"environment_profile,omitempty"`
+	EnvironmentKeys    []string          `json:"environment_keys,omitempty"`
+	EnvironmentValues  map[string]string `json:"environment,omitempty"`
+	CompilerName       string            `json:"compiler_name,omitempty"`
+	CompilerPath       string            `json:"compiler_path,omitempty"`
+	CompilerVersion    string            `json:"compiler_version,omitempty"`
+	OutputTruncated    bool              `json:"output_truncated,omitempty"`
+}
+
 type CheckResult struct {
-	ID           string     `json:"check_id"`
-	CheckVersion string     `json:"check_version,omitempty"`
-	Status       Status     `json:"status"`
-	Blocking     bool       `json:"blocking,omitempty"`
-	Summary      string     `json:"summary"`
-	Reason       string     `json:"reason,omitempty"`
-	DurationMS   int64      `json:"duration_ms"`
-	ExitCode     *int       `json:"exit_code,omitempty"`
-	Evidence     []Evidence `json:"evidence,omitempty"`
-	Findings     []Finding  `json:"findings,omitempty"`
-	RawOutput    string     `json:"raw_output,omitempty"`
-	ErrorDetail  string     `json:"error,omitempty"`
+	ID                 string      `json:"check_id"`
+	CheckVersion       string      `json:"check_version,omitempty"`
+	Status             Status      `json:"status"`
+	Blocking           bool        `json:"blocking,omitempty"`
+	Summary            string      `json:"summary"`
+	Reason             string      `json:"reason,omitempty"`
+	DurationMS         int64       `json:"duration_ms"`
+	ExitCode           *int        `json:"exit_code,omitempty"`
+	Executable         string      `json:"executable,omitempty"`
+	Arguments          []string    `json:"arguments,omitempty"`
+	EnvironmentProfile string      `json:"environment_profile,omitempty"`
+	EnvironmentKeys    []string    `json:"environment_keys,omitempty"`
+	Executions         []Execution `json:"executions,omitempty"`
+	Evidence           []Evidence  `json:"evidence,omitempty"`
+	Findings           []Finding   `json:"findings,omitempty"`
+	RawOutput          string      `json:"raw_output,omitempty"`
+	OutputTruncated    bool        `json:"output_truncated,omitempty"`
+	ErrorDetail        string      `json:"error,omitempty"`
 }
 
 type Report struct {
@@ -73,6 +92,7 @@ type Report struct {
 	PolicyVersion string        `json:"policy_version,omitempty"`
 	DevctlVersion string        `json:"devctl_version,omitempty"`
 	DevctlCommit  string        `json:"devctl_commit,omitempty"`
+	DevctlDirty   bool          `json:"devctl_dirty,omitempty"`
 	EvidencePath  string        `json:"evidence_path,omitempty"`
 	StartedAt     time.Time     `json:"started_at"`
 	FinishedAt    time.Time     `json:"finished_at"`
@@ -106,6 +126,7 @@ type FailurePacket struct {
 	Overall       Status        `json:"overall"`
 	DevctlVersion string        `json:"devctl_version,omitempty"`
 	DevctlCommit  string        `json:"devctl_commit,omitempty"`
+	DevctlDirty   bool          `json:"devctl_dirty,omitempty"`
 	EvidencePath  string        `json:"evidence_path,omitempty"`
 	Failures      []FailureItem `json:"failures"`
 	NextAction    string        `json:"next_action"`

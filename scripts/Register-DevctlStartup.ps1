@@ -3,12 +3,12 @@ param([string]$DevctlRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $DevctlRoot -ErrorAction Stop).Path
 $startup = Join-Path $root 'scripts\devctl-startup.ps1'
-$devctl = Join-Path $root 'devctl.exe'
+$bootstrap = Join-Path $root 'scripts\devctl-bootstrap.ps1'
 if (-not (Test-Path -LiteralPath $startup -PathType Leaf)) { throw "Startup script was not found: $startup" }
-if (-not (Test-Path -LiteralPath $devctl -PathType Leaf)) { throw "Build devctl.exe before registering startup: $devctl" }
+if (-not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) { throw "Bootstrap script was not found: $bootstrap" }
 
 $taskName = 'devctl startup resume'
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startup`" -Devctl `"$devctl`" -OpenWorkspace -Prompt"
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrap`" -DevctlRoot `"$root`" -Startup"
 $user = "$env:USERDOMAIN\$env:USERNAME"
 $triggers = @(
     (New-ScheduledTaskTrigger -AtLogOn -User $user),

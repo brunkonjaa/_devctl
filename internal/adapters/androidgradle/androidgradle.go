@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -29,13 +30,17 @@ func Checks(project model.Project) []scheduler.CheckSpec {
 		{
 			ID: "android-gradle-wrapper",
 			Run: func(context.Context) model.CheckResult {
-				return fileCheck(project.Path, "android-gradle-wrapper", []string{"gradlew", "gradlew.bat"}, "Gradle wrapper is present")
+				wrapper := "gradlew"
+				if runtime.GOOS == "windows" {
+					wrapper = "gradlew.bat"
+				}
+				return fileCheck(project.Path, "android-gradle-wrapper", []string{wrapper}, "Gradle wrapper is present")
 			},
 		},
 		{
 			ID: "android-project-structure",
 			Run: func(context.Context) model.CheckResult {
-				return fileCheck(project.Path, "android-project-structure", []string{"settings.gradle.kts", "app"}, "Android project structure is present")
+				return androidProjectStructureCheck(project.Path)
 			},
 		},
 		{
@@ -72,12 +77,24 @@ func Checks(project model.Project) []scheduler.CheckSpec {
 	}
 }
 
+func androidProjectStructureCheck(root string) model.CheckResult {
+	if _, err := os.Stat(filepath.Join(root, "app")); err != nil {
+		return model.CheckResult{ID: "android-project-structure", Status: model.Fail, Summary: "Android project structure is incomplete", Reason: "missing: app"}
+	}
+	for _, settings := range []string{"settings.gradle.kts", "settings.gradle"} {
+		if _, err := os.Stat(filepath.Join(root, settings)); err == nil {
+			return model.CheckResult{ID: "android-project-structure", Status: model.Pass, Summary: "Android project structure is present"}
+		}
+	}
+	return model.CheckResult{ID: "android-project-structure", Status: model.Fail, Summary: "Android project structure is incomplete", Reason: "missing: settings.gradle.kts or settings.gradle"}
+}
+
 func GitStatusCheck(project model.Project) scheduler.CheckSpec {
 	return scheduler.CheckSpec{
 		ID: "git-status",
 		Run: func(ctx context.Context) model.CheckResult {
 			result, err := runner.Run(ctx, project.Path, runner.GitStatus)
-			check := model.CheckResult{ID: "git-status", RawOutput: result.Output, Evidence: []model.Evidence{{Type: "git-status", Detail: strings.TrimSpace(result.Output)}}}
+			check := model.CheckResult{ID: "git-status", RawOutput: result.Output, OutputTruncated: result.OutputTruncated, Executable: result.Executable, Arguments: result.Arguments, EnvironmentProfile: result.EnvironmentProfile, EnvironmentKeys: result.EnvironmentKeys, Executions: executionList(result), Evidence: []model.Evidence{{Type: "git-status", Detail: strings.TrimSpace(result.Output)}}}
 			if err != nil {
 				check.Status = model.Error
 				check.Summary = "Git status could not be collected"
@@ -98,7 +115,7 @@ func GitStatusCheck(project model.Project) scheduler.CheckSpec {
 
 func commandCheck(ctx context.Context, project model.Project, command runner.CommandID, passSummary string) model.CheckResult {
 	result, err := runner.Run(ctx, project.Path, command)
-	check := model.CheckResult{RawOutput: result.Output, Evidence: []model.Evidence{{Type: "process-output", Detail: strings.TrimSpace(result.Output)}}}
+	check := model.CheckResult{RawOutput: result.Output, OutputTruncated: result.OutputTruncated, Executable: result.Executable, Arguments: result.Arguments, EnvironmentProfile: result.EnvironmentProfile, EnvironmentKeys: result.EnvironmentKeys, Executions: executionList(result), Evidence: []model.Evidence{{Type: "process-output", Detail: strings.TrimSpace(result.Output)}}}
 	if err != nil {
 		if result.TerminationReason != "" && result.TerminationReason != "completed" {
 			check.Status = model.Error
@@ -136,6 +153,19 @@ func fileCheck(root, id string, paths []string, summary string) model.CheckResul
 		return model.CheckResult{ID: id, Status: model.Fail, Summary: summary + " is incomplete", Reason: "missing: " + strings.Join(missing, ", ")}
 	}
 	return model.CheckResult{ID: id, Status: model.Pass, Summary: summary}
+}
+
+func executionList(result runner.Result) []model.Execution {
+	if !result.Started && result.Executable == "" {
+		return nil
+	}
+	return []model.Execution{{
+		Executable:         result.Executable,
+		Arguments:          append([]string(nil), result.Arguments...),
+		EnvironmentProfile: result.EnvironmentProfile,
+		EnvironmentKeys:    append([]string(nil), result.EnvironmentKeys...),
+		OutputTruncated:    result.OutputTruncated,
+	}}
 }
 
 func gitOutputIsClean(output string) bool {

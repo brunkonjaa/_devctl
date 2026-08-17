@@ -7,6 +7,7 @@ import (
 
 	"devctl/internal/adapters"
 	"devctl/internal/discovery"
+	"devctl/internal/events"
 	"devctl/internal/evidence"
 	"devctl/internal/model"
 	"devctl/internal/policy"
@@ -16,10 +17,28 @@ import (
 
 const coreCheckVersion = "core-v1"
 
+type Options struct {
+	Sink  events.Sink
+	RunID string
+}
+
 func Project(ctx context.Context, path string) (report model.Report) {
+	return ProjectWithOptions(ctx, path, Options{})
+}
+
+func ProjectWithOptions(ctx context.Context, path string, options Options) (report model.Report) {
 	started := time.Now().UTC()
-	report = model.Report{SchemaVersion: "1", Command: "verify", RunID: started.Format("20060102T150405.000000000Z"), StartedAt: started, DevctlVersion: version.Value, DevctlCommit: version.Commit}
-	defer finalize(&report, path)
+	provenance := version.Current()
+	runID := options.RunID
+	if runID == "" {
+		runID = started.Format("20060102T150405.000000000Z")
+	}
+	report = model.Report{SchemaVersion: "1", Command: "verify", RunID: runID, StartedAt: started, DevctlVersion: provenance.Version, DevctlCommit: provenance.Commit, DevctlDirty: provenance.Dirty}
+	if options.Sink != nil {
+		ctx = events.WithSink(ctx, options.Sink)
+	}
+	ctx = events.WithMetadata(ctx, report.RunID, "")
+	defer func() { finalize(&report, path, ctx) }()
 	project, err := discovery.Detect(path)
 	if err != nil {
 		report.Overall = model.Error
@@ -45,7 +64,20 @@ func Project(ctx context.Context, path string) (report model.Report) {
 		return report
 	}
 	report.PolicyVersion = config.Version
-	plan, planErr := scheduler.BuildPlan(policy.FilterChecks(adapters.Checks(project), config))
+	if config.ProjectID != "" {
+		project.Identity = config.ProjectID
+		report.Project = &project
+	}
+	ctx = events.WithMetadata(ctx, report.RunID, project.Identity)
+	events.Emit(ctx, events.Event{EventType: events.VerificationStarted, Message: "verification started"})
+	specs := adapters.Checks(project)
+	if validationErr := policy.ValidateCheckConfiguration(specs, config); validationErr != nil {
+		report.Overall = model.Error
+		report.Checks = append(report.Checks, model.CheckResult{ID: "policy-validation", CheckVersion: coreCheckVersion, Status: model.Error, Summary: "project policy is invalid", Reason: validationErr.Error()})
+		report.FinishedAt = time.Now().UTC()
+		return report
+	}
+	plan, planErr := scheduler.BuildPlan(policy.FilterChecks(specs, config))
 	if planErr != nil {
 		report.Overall = model.Error
 		report.Checks = append(report.Checks, model.CheckResult{ID: "scheduler-plan", CheckVersion: coreCheckVersion, Status: model.Error, Summary: "check plan could not be built", Reason: planErr.Error()})
@@ -59,7 +91,7 @@ func Project(ctx context.Context, path string) (report model.Report) {
 	return report
 }
 
-func finalize(report *model.Report, projectPath string) {
+func finalize(report *model.Report, projectPath string, ctx context.Context) {
 	if report.FinishedAt.IsZero() {
 		report.FinishedAt = time.Now().UTC()
 	}
@@ -67,7 +99,14 @@ func finalize(report *model.Report, projectPath string) {
 	if _, err := evidence.Write(projectPath, *report); err != nil {
 		report.Checks = append(report.Checks, model.CheckResult{ID: "evidence-write", CheckVersion: coreCheckVersion, Status: model.Error, Summary: "verification evidence could not be written", Reason: err.Error()})
 		report.Overall = model.Error
+	} else {
+		events.Emit(ctx, events.Event{EventType: events.EvidenceWritten, Status: string(report.Overall), Message: report.EvidencePath})
 	}
+	events.Emit(ctx, events.Event{EventType: events.VerificationFinished, Status: string(report.Overall), Message: "verification finished"})
+}
+
+func NewRunID() string {
+	return time.Now().UTC().Format("20060102T150405.000000000Z")
 }
 
 func overall(checks []model.CheckResult) model.Status {

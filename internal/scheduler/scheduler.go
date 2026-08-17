@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"devctl/internal/events"
 	"devctl/internal/model"
 )
 
@@ -104,31 +105,40 @@ func Run(ctx context.Context, plan Plan, maxConcurrent int) []model.CheckResult 
 	for len(pending) > 0 {
 		if ctx.Err() != nil {
 			for id := range pending {
-				results[id] = skipped(id, plan.Checks[id].Version, "scheduler context was cancelled")
+				results[id] = skipped(ctx, id, plan.Checks[id].Version, "scheduler context was cancelled")
 				delete(pending, id)
 			}
 			break
 		}
 
-		ready := readyChecks(plan, pending, results)
-		if len(ready) == 0 {
-			for id := range pending {
-				results[id] = model.CheckResult{ID: id, CheckVersion: checkVersion(plan.Checks[id]), Status: model.Error, Summary: "scheduler could not make progress", Reason: "unresolved dependency state"}
-				delete(pending, id)
+		var batch []string
+		for {
+			ready := readyChecks(plan, pending, results)
+			if len(ready) == 0 {
+				for id := range pending {
+					results[id] = model.CheckResult{ID: id, CheckVersion: checkVersion(plan.Checks[id]), Status: model.Error, Summary: "scheduler could not make progress", Reason: "unresolved dependency state"}
+					events.Emit(ctx, events.Event{CheckID: id, EventType: events.CheckFinished, Status: string(model.Error), Message: "scheduler could not make progress"})
+					delete(pending, id)
+				}
+				break
 			}
+			blockedAny := false
+			for _, id := range ready {
+				if blockedByDependency(plan.Checks[id], results) {
+					results[id] = skipped(ctx, id, plan.Checks[id].Version, "dependency did not complete successfully")
+					delete(pending, id)
+					blockedAny = true
+				}
+			}
+			if blockedAny {
+				continue
+			}
+			batch = lockCompatibleBatch(plan, ready)
 			break
 		}
-		for _, id := range ready {
-			if blockedByDependency(plan.Checks[id], results) {
-				results[id] = skipped(id, plan.Checks[id].Version, "dependency did not complete successfully")
-				delete(pending, id)
-			}
-		}
-		ready = readyChecks(plan, pending, results)
-		if len(ready) == 0 {
+		if len(batch) == 0 {
 			continue
 		}
-		batch := lockCompatibleBatch(plan, ready)
 		batchResults := runBatch(ctx, plan, batch, maxConcurrent)
 		for id, result := range batchResults {
 			results[id] = result
@@ -214,6 +224,8 @@ func runOne(ctx context.Context, spec CheckSpec) model.CheckResult {
 		checkContext, cancel = context.WithTimeout(ctx, spec.Timeout.Hard)
 	}
 	defer cancel()
+	checkContext = events.WithCheck(checkContext, spec.ID)
+	events.Emit(checkContext, events.Event{EventType: events.CheckStarted, Message: "check started"})
 	started := time.Now()
 	result := spec.Run(checkContext)
 	result.ID = spec.ID
@@ -229,10 +241,12 @@ func runOne(ctx context.Context, spec CheckSpec) model.CheckResult {
 		result.Summary = "check cancelled"
 		result.Reason = "scheduler context was cancelled while the check was running"
 	}
+	events.Emit(checkContext, events.Event{EventType: events.CheckFinished, Status: string(result.Status), ElapsedMS: result.DurationMS, Message: result.Summary})
 	return result
 }
 
-func skipped(id, version, reason string) model.CheckResult {
+func skipped(ctx context.Context, id, version, reason string) model.CheckResult {
+	events.Emit(ctx, events.Event{CheckID: id, EventType: events.CheckSkipped, Status: string(model.Skip), Message: reason})
 	return model.CheckResult{ID: id, CheckVersion: versionOrDefault(version), Status: model.Skip, Summary: "check was not run", Reason: reason}
 }
 

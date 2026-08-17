@@ -1,6 +1,9 @@
 package androidgradle
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"devctl/internal/model"
@@ -26,6 +29,21 @@ func TestChecksDeclareGradleExecutionRelationships(t *testing.T) {
 	assertResource(t, byID, "android-build", "gradle")
 	assertResource(t, byID, "android-unit-tests", "gradle")
 	assertResource(t, byID, "android-lint", "gradle")
+}
+
+func TestGradleWrapperRequiresPlatformAppropriateScript(t *testing.T) {
+	root := t.TempDir()
+	wrapper := "gradlew"
+	if runtime.GOOS == "windows" {
+		wrapper = "gradlew.bat"
+	}
+	if err := os.WriteFile(filepath.Join(root, wrapper), []byte("wrapper"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := fileCheck(root, "android-gradle-wrapper", []string{wrapper}, "Gradle wrapper is present")
+	if result.Status != model.Pass {
+		t.Fatalf("expected platform wrapper %q to pass, got %#v", wrapper, result)
+	}
 }
 
 func assertRequires(t *testing.T, checks map[string]struct {

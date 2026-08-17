@@ -172,3 +172,21 @@ func TestFindCoverageReportReportsMissingEvidence(t *testing.T) {
 		t.Fatalf("expected missing report sentinel, got %v", err)
 	}
 }
+
+func TestFindCoverageReportRejectsExternalSymlink(t *testing.T) {
+	root := t.TempDir()
+	external := filepath.Join(t.TempDir(), "external.xml")
+	if err := os.WriteFile(external, []byte(`<report><counter type="LINE" missed="0" covered="100"/></report>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "app", "build", "reports", "coverage", "androidTest", "debug", "connected", "report.xml")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symbolic links are unavailable: %v", err)
+	}
+	if _, err := findCoverageReport(root); err == nil || errors.Is(err, errCoverageReportNotFound) {
+		t.Fatalf("expected external coverage symlink to be rejected, got %v", err)
+	}
+}

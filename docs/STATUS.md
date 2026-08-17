@@ -6,15 +6,15 @@ Navigation: [documentation index](README.md) · [roadmap](ROADMAP.md) · [decisi
 
 ## Current state
 
-Stage 4C is complete. HearthLink produces a JaCoCo XML report, devctl parses line coverage and applies the configured thresholds, and coverage XML is copied into the uploaded evidence tree.
+Stages 4C through 6 are complete. Stage 7 is now the multi-project deterministic developer automation platform work. HearthLink is the first Android integration, not the boundary of devctl.
 
 Next:
 
 ```text
-Stage 4D — Dependency evidence
+Stage 7C — Controlled optional agent worker
 ```
 
-Do not start dependency scanning, caching, changed-file logic, or AI escalation as part of Stage 4C.
+AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
 
 ## Completed stages
 
@@ -80,6 +80,33 @@ Do not start dependency scanning, caching, changed-file logic, or AI escalation 
 android-coverage                 enabled, required=false, preferred=80, minimum=70
 dependency-vulnerability-scan   enabled, required=false
 ```
+
+## Stage 7A — Deterministic core repair and platform foundations — COMPLETE
+
+The accepted contract is:
+
+- `_devctl` is multi-project and deterministic.
+- AI may propose or modify repository source, but devctl decides what executes.
+- Runner output is bounded and captured without a stdout/stderr pipe race.
+- Process failures are `FAIL`; executor and framework failures are `ERROR`.
+- Windows automation verifies binary provenance before it runs.
+- Project configuration is versioned and validated.
+- Project identity and later per-project workflow locking remain generic concepts.
+
+The Windows race evidence records the controlled Go environment, the resolved C compiler path and version, and the actual `go test -race -count=1 ./...` execution. The remaining Stage 7 work is outside this completed deterministic-core boundary.
+
+## Stage 7B — Visible deterministic execution — COMPLETE
+
+- Shared event types and sequence assignment are renderer-independent.
+- Scheduler and runner emit check, process and lifecycle events.
+- `devctl verify --live` renders to stderr and does not change JSON stdout, check statuses or exit codes.
+- `.devctl/workflow/events.jsonl` stores lifecycle events only and `.devctl/workflow/current.md` is regenerated atomically.
+- The first multi-project registry slice is implemented. It stores project/run metadata in a versioned user-state registry, uses atomic writes and a cross-process lock, recognizes committed project IDs after a path move, rejects identity collisions, and marks dead or PID-reused `running` entries as `stale`.
+- Active-run checks validate the stored process start identity as well as the PID, so a later process that reuses the old PID is not treated as the original verification.
+- The registry does not store check events, raw process output, evidence contents, or adapter-specific fields. Those remain in the per-project workflow and evidence locations.
+- A fresh Windows matrix ran `_devctl` and HearthLink concurrently. Both were observed as `running` with separate registry entries, then finished independently. Each produced its own JSON result, workflow journal/current file and evidence directory. Live/non-live parity held for both projects.
+- Killing a live `_devctl` verification left its registry entry `running`; a new verification then replaced the old run and finished successfully using process-identity stale recovery.
+- The durable acceptance record is [STAGE_7B_ACCEPTANCE.md](STAGE_7B_ACCEPTANCE.md). It records the Windows/Linux process-identity boundary, representative concurrent matrix, live/non-live parity, workflow/evidence isolation, kill/restart recovery, and CLI identity cases.
 
 Do not turn an unavailable evidence producer into `PASS`.
 

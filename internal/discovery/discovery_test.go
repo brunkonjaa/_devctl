@@ -35,6 +35,9 @@ func TestDetectFindsGoModule(t *testing.T) {
 	if len(project.Technologies) != 1 || project.Technologies[0].ID != "go" {
 		t.Fatalf("expected Go technology, got %#v", project.Technologies)
 	}
+	if len(project.Identity) != 16 {
+		t.Fatalf("expected stable project identity, got %q", project.Identity)
+	}
 }
 
 func TestDiscoverSkipsDevctlAndUnknownDirectories(t *testing.T) {

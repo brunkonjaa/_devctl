@@ -1,8 +1,12 @@
 package discovery
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"devctl/internal/model"
 )
@@ -33,7 +37,7 @@ func Detect(path string) (model.Project, error) {
 		return model.Project{}, os.ErrInvalid
 	}
 
-	project := model.Project{Name: filepath.Base(abs), Path: abs}
+	project := model.Project{Name: filepath.Base(abs), Path: abs, Identity: identity(abs)}
 	for _, candidate := range markerTechnologies {
 		found := make([]string, 0, len(candidate.markers))
 		for _, marker := range candidate.markers {
@@ -56,6 +60,15 @@ func Detect(path string) (model.Project, error) {
 		}
 	}
 	return project, nil
+}
+
+func identity(path string) string {
+	canonical := filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		canonical = strings.ToLower(canonical)
+	}
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func Discover(root string) ([]model.Project, error) {
