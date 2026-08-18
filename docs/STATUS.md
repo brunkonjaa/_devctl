@@ -11,10 +11,12 @@ Stages 4C through 6 are complete. Stage 7 is now the multi-project deterministic
 Next:
 
 ```text
-Later Stage 7 work after accepted Stage 7D-B implementation
+Stage 7D-C plus compact context, knowledge, cache and evidence interfaces — local implementation and verification audit
 ```
 
 AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
+
+The current local interfaces are documented in [PLATFORM_CONTEXT.md](PLATFORM_CONTEXT.md). Lessons and cache entries are advisory and cannot override a fresh deterministic repository result.
 
 The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Stage 7C is frozen at the merged baseline. The Stage 7D-A contract and Stage 7D-B implementation are now accepted; later work remains outside this slice.
 
@@ -126,7 +128,13 @@ The contract is documented in [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md) and
 
 ## Stage 7D-B — Minimal controlled repair orchestration implementation — COMPLETE / ACCEPTED
 
-The initial implementation is in [STAGE_7D_B_IMPLEMENTATION.md](STAGE_7D_B_IMPLEMENTATION.md). `internal/repair` proves one synthetic Go repair through bounded proposal, exact approval hash, pre-apply revalidation, patch preflight, rollback-based all-or-nothing application, post-state validation, evidence, and deterministic re-verification. A Codex transport, visible approval command, and general repair CLI are not implemented yet.
+The initial implementation is in [STAGE_7D_B_IMPLEMENTATION.md](STAGE_7D_B_IMPLEMENTATION.md). `internal/repair` proves one synthetic Go repair through bounded proposal, exact approval hash, pre-apply revalidation, patch preflight, rollback-based all-or-nothing application, post-state validation, evidence, and deterministic re-verification. The cancellation hardening also requires rollback and exact baseline proof after any modification before returning `CANCELLED`. A Codex transport remains outside this slice; the visible controlled repair CLI is recorded in [STAGE_7D_C_CONTROL.md](STAGE_7D_C_CONTROL.md).
+
+## Stage 7D-C — Human-facing controlled repair CLI — IMPLEMENTED / WINDOWS VISIBLE ACCEPTANCE PARTIAL
+
+The design contract and Windows process acceptance record are documented in [STAGE_7D_C_CONTROL.md](STAGE_7D_C_CONTROL.md). The production CLI supplies the terminal workflow, controlled proposal-file seam, engine-owned approval evidence, observational live progress through `internal/events`, approval input, strict JSON/stdout separation and defined exit codes. Fresh visible-terminal evidence passes `A`, `R`, `C`, `D` then decision, invalid then valid input, TTY EOF, JSON separation, and the exact hash-bound apply path. A direct native visible-terminal Ctrl+C-before-application case also returned exit `4` with unchanged baseline evidence. Timing-sensitive Ctrl+C during or after mutation remains `NOT_TESTED` because the small fixture completes its apply and verification phases before a manual signal can reliably reach those windows; the deterministic package rollback tests remain the evidence for those seams. Deterministic verification-cache reuse remains outside this stage.
+
+The compact context, lessons, cache and evidence-index interfaces are documented in [PLATFORM_CONTEXT.md](PLATFORM_CONTEXT.md).
 
 ## Control-plane completion notes
 

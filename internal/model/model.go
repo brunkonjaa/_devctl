@@ -86,20 +86,23 @@ type CheckResult struct {
 }
 
 type Report struct {
-	SchemaVersion string        `json:"schema_version"`
-	Command       string        `json:"command"`
-	RunID         string        `json:"run_id"`
-	PolicyVersion string        `json:"policy_version,omitempty"`
-	DevctlVersion string        `json:"devctl_version,omitempty"`
-	DevctlCommit  string        `json:"devctl_commit,omitempty"`
-	DevctlDirty   bool          `json:"devctl_dirty,omitempty"`
-	EvidencePath  string        `json:"evidence_path,omitempty"`
-	StartedAt     time.Time     `json:"started_at"`
-	FinishedAt    time.Time     `json:"finished_at"`
-	Project       *Project      `json:"project,omitempty"`
-	Projects      []Project     `json:"projects,omitempty"`
-	Checks        []CheckResult `json:"checks,omitempty"`
-	Overall       Status        `json:"overall"`
+	SchemaVersion         string        `json:"schema_version"`
+	Command               string        `json:"command"`
+	RunID                 string        `json:"run_id"`
+	PolicyVersion         string        `json:"policy_version,omitempty"`
+	DevctlVersion         string        `json:"devctl_version,omitempty"`
+	DevctlCommit          string        `json:"devctl_commit,omitempty"`
+	DevctlDirty           bool          `json:"devctl_dirty,omitempty"`
+	RepositoryRevision    string        `json:"repository_revision,omitempty"`
+	RepositoryDirty       bool          `json:"repository_dirty,omitempty"`
+	RepositoryFingerprint string        `json:"repository_fingerprint,omitempty"`
+	EvidencePath          string        `json:"evidence_path,omitempty"`
+	StartedAt             time.Time     `json:"started_at"`
+	FinishedAt            time.Time     `json:"finished_at"`
+	Project               *Project      `json:"project,omitempty"`
+	Projects              []Project     `json:"projects,omitempty"`
+	Checks                []CheckResult `json:"checks,omitempty"`
+	Overall               Status        `json:"overall"`
 }
 
 // SessionState is deliberately small and contains no credentials or raw logs.
