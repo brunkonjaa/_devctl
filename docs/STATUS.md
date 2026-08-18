@@ -11,12 +11,12 @@ Stages 4C through 6 are complete. Stage 7 is now the multi-project deterministic
 Next:
 
 ```text
-Stage 7D-A — Controlled repair orchestration contract
+Later Stage 7 work after accepted Stage 7D-B implementation
 ```
 
 AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
 
-The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Stage 7C is frozen at the merged baseline. The next contract is [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md); repair implementation has not started.
+The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Stage 7C is frozen at the merged baseline. The Stage 7D-A contract and Stage 7D-B implementation are now accepted; later work remains outside this slice.
 
 ## Completed stages
 
@@ -120,9 +120,13 @@ Do not turn an unavailable evidence producer into `PASS`.
 - Live rendering remains on stderr and structured worker JSON remains on stdout.
 - Repair orchestration, source modification approval, retries, and the knowledge vault are intentionally outside this completed slice.
 
-## Stage 7D-A — Controlled repair orchestration contract — NEXT
+## Stage 7D-A — Controlled repair orchestration contract — COMPLETE
 
-The contract is documented in [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md). It defines exact diff approval, pre/post file provenance, trusted production-source paths, forbidden areas, fail-closed outcomes, one repair attempt, and the synthetic Go acceptance matrix. No repair worker or patch application code has been implemented yet.
+The contract is documented in [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md) and frozen in commit `0156e3a7cb2e33fa53a4e68c9c686be61bc4debb`.
+
+## Stage 7D-B — Minimal controlled repair orchestration implementation — COMPLETE / ACCEPTED
+
+The initial implementation is in [STAGE_7D_B_IMPLEMENTATION.md](STAGE_7D_B_IMPLEMENTATION.md). `internal/repair` proves one synthetic Go repair through bounded proposal, exact approval hash, pre-apply revalidation, patch preflight, rollback-based all-or-nothing application, post-state validation, evidence, and deterministic re-verification. A Codex transport, visible approval command, and general repair CLI are not implemented yet.
 
 ## Control-plane completion notes
 
