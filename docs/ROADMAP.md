@@ -42,7 +42,7 @@ The scanner remains `NOT_TESTED` when supported dependency evidence or the scann
 
 `devctl handoff` emits a bounded packet from an existing `report.json`. It contains failed or blocking checks, findings, evidence paths, and provenance without raw logs or project command execution.
 
-## Current: Stage 7D-A — Controlled repair orchestration contract
+## Completed: Stage 7D-B — Minimal controlled repair orchestration implementation
 
 Stage 7 is a multi-project platform milestone. The core must work for `_devctl`, HearthLink and Smart Schedule without putting project-specific rules into the workflow controller.
 
@@ -68,15 +68,17 @@ Stage 7 is a multi-project platform milestone. The core must work for `_devctl`,
 - Project identity is registry-approved and revalidated before execution.
 - No repair loop, file modification approval flow, knowledge vault, or worker retry is included.
 
-### Stage 7D-A — Controlled repair orchestration contract — NEXT
+### Stage 7D-A — Controlled repair orchestration contract — COMPLETE
 
-- Define the bounded repair task and proposal envelopes.
-- Bind human approval to an exact diff hash.
-- Capture pre-state, post-state, and per-file hashes.
-- Allow only trusted production-source paths and reject forbidden areas.
-- Fail closed on any delta mismatch, cancellation, worker error, or `_devctl` `ERROR`.
-- Prove one synthetic Go repair and the negative acceptance matrix.
-- Do not implement patch application or a worker adapter until this contract is accepted.
+- Frozen in `0156e3a7cb2e33fa53a4e68c9c686be61bc4debb`.
+- The exact-diff, clean-baseline, pre-apply revalidation, all-or-nothing, and fail-closed contract is documented in [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md).
+
+### Stage 7D-B — Minimal controlled repair orchestration implementation — COMPLETE / ACCEPTED
+
+- Implement one bounded repair attempt in `internal/repair`.
+- Use the synthetic Go fixture only.
+- Keep proposal, approval, and deterministic verification as explicit seams.
+- Test the positive lifecycle and negative matrix before adding a real worker transport or CLI.
 
 Hard exclusions for Stage 7 are automatic commits, pushes, merges, AI-created shell commands, AI changes to policy thresholds, test disabling and unbounded repair loops.
 
