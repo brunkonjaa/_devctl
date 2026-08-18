@@ -11,12 +11,12 @@ Stages 4C through 6 are complete. Stage 7 is now the multi-project deterministic
 Next:
 
 ```text
-Stage 7C — Controlled optional agent worker
+Stage 7D-A — Controlled repair orchestration contract
 ```
 
 AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
 
-The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). The first vertical slice is implemented as a strict `worker verify` request/result envelope over the existing deterministic verification path. Iterative repair, arbitrary commands, and knowledge-vault integration have not started.
+The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Stage 7C is frozen at the merged baseline. The next contract is [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md); repair implementation has not started.
 
 ## Completed stages
 
@@ -111,6 +111,18 @@ The Windows race evidence records the controlled Go environment, the resolved C 
 - The durable acceptance record is [STAGE_7B_ACCEPTANCE.md](STAGE_7B_ACCEPTANCE.md). It records the Windows/Linux process-identity boundary, representative concurrent matrix, live/non-live parity, workflow/evidence isolation, kill/restart recovery, and CLI identity cases.
 
 Do not turn an unavailable evidence producer into `PASS`.
+
+## Stage 7C — Controlled optional agent worker — COMPLETE / FROZEN
+
+- The merged baseline is `99dd1e6d3c1b8c31bb617e8322c170b87b88673b`.
+- The reviewed worker slice accepts only a bounded `verify` request for an approved project identity.
+- The worker receives a bounded structured result and cannot select commands, checks, thresholds, policy, or exit status.
+- Live rendering remains on stderr and structured worker JSON remains on stdout.
+- Repair orchestration, source modification approval, retries, and the knowledge vault are intentionally outside this completed slice.
+
+## Stage 7D-A — Controlled repair orchestration contract — NEXT
+
+The contract is documented in [STAGE_7D_A_CONTROL.md](STAGE_7D_A_CONTROL.md). It defines exact diff approval, pre/post file provenance, trusted production-source paths, forbidden areas, fail-closed outcomes, one repair attempt, and the synthetic Go acceptance matrix. No repair worker or patch application code has been implemented yet.
 
 ## Control-plane completion notes
 

@@ -42,7 +42,7 @@ The scanner remains `NOT_TESTED` when supported dependency evidence or the scann
 
 `devctl handoff` emits a bounded packet from an existing `report.json`. It contains failed or blocking checks, findings, evidence paths, and provenance without raw logs or project command execution.
 
-## Current: Stage 7C — Controlled optional agent worker
+## Current: Stage 7D-A — Controlled repair orchestration contract
 
 Stage 7 is a multi-project platform milestone. The core must work for `_devctl`, HearthLink and Smart Schedule without putting project-specific rules into the workflow controller.
 
@@ -61,13 +61,22 @@ Stage 7 is a multi-project platform milestone. The core must work for `_devctl`,
 - A fresh concurrent `_devctl` plus HearthLink matrix verified independent registry entries, per-project workflow/evidence outputs and live/non-live parity. A killed run was also restarted successfully through stale recovery.
 - Acceptance is recorded in [STAGE_7B_ACCEPTANCE.md](STAGE_7B_ACCEPTANCE.md). No further feature work is planned for this stage.
 
-### Stage 7C — Controlled optional agent worker
+### Stage 7C — Controlled optional agent worker — COMPLETE / FROZEN
 
-- First slice complete: define the control contract and accept one strict `worker verify` request that calls the existing deterministic verification path and returns a versioned structured result.
-- Add explicit approval before file modification.
-- Send bounded task and failure packets to Codex.
-- Route `FAIL` back to Codex and stop on `ERROR`.
-- Enforce retry, repeated-failure and human-review limits.
+- First slice merged in `99dd1e6d3c1b8c31bb617e8322c170b87b88673b`.
+- `worker verify` uses the existing deterministic verification path and returns a bounded versioned result.
+- Project identity is registry-approved and revalidated before execution.
+- No repair loop, file modification approval flow, knowledge vault, or worker retry is included.
+
+### Stage 7D-A — Controlled repair orchestration contract — NEXT
+
+- Define the bounded repair task and proposal envelopes.
+- Bind human approval to an exact diff hash.
+- Capture pre-state, post-state, and per-file hashes.
+- Allow only trusted production-source paths and reject forbidden areas.
+- Fail closed on any delta mismatch, cancellation, worker error, or `_devctl` `ERROR`.
+- Prove one synthetic Go repair and the negative acceptance matrix.
+- Do not implement patch application or a worker adapter until this contract is accepted.
 
 Hard exclusions for Stage 7 are automatic commits, pushes, merges, AI-created shell commands, AI changes to policy thresholds, test disabling and unbounded repair loops.
 
