@@ -40,3 +40,261 @@ lessons:
       - repository-state
       - ci-bootstrap
       - build-and-test-checks
+
+  - id: LESSON-0003
+    title: Visible acceptance must preserve the real terminal boundary
+    area: process-acceptance
+    failure: >-
+      A PowerShell acceptance wrapper redirected the child streams and tried to
+      replay diagnostics through asynchronous callbacks. It sent approval input
+      before observing the synchronous prompt, could terminate the host before
+      final evidence was written, and could not provide trustworthy Ctrl+C
+      process evidence.
+    root_cause: >-
+      The harness treated terminal presentation and keyboard interaction as
+      ordinary redirected process I/O. It also reused evidence roots and did not
+      enforce an independent FAIL baseline immediately before launch.
+    why_existing_checks_missed_it: >-
+      Package tests and ConPTY tests did not exercise an ordinary visible
+      Windows Terminal. A successful child result was therefore not enough to
+      prove that the wrapper had captured the actual terminal interaction.
+    question: >-
+      Did a fresh independent FAIL fixture receive only explicit human input at
+      the real approval prompt, and can the process result and before/after
+      evidence be attributed to the child without the harness changing the
+      interaction?
+    deterministic_candidate: true
+    correction: >-
+      Build each case from a new committed fixture, assert HEAD, clean status,
+      broken-file hash and exact FAIL immediately before launch, never inject
+      approval input, use a native sidecar only to relay and capture inherited
+      streams, keep the visible terminal attached, require A/R/D/C plus Enter,
+      record the child PID and exit code, and never reuse a case after an
+      attempted execution. Use direct visible-terminal execution for Ctrl+C;
+      classify unreachable timing windows as NOT_TESTED and bind them to the
+      deterministic rollback tests instead of inventing process evidence.
+    regression_coverage: yes
+    applies_to:
+      - windows-tty
+      - process-acceptance
+      - repair-cli
+      - evidence-capture
+
+  - id: LESSON-0004
+    title: Truthful statuses must stay separate from policy decisions
+    area: verification-semantics
+    problem: >-
+      Missing, unavailable, warning, failing and framework-error evidence can
+      be collapsed into a misleading green or generic failure result.
+    root_cause: >-
+      Execution status and policy blocking were treated as the same question.
+    correction: >-
+      Preserve PASS, WARN, FAIL, ERROR, SKIP, NOT_TESTED, NOT_APPLICABLE,
+      INSUFFICIENT_EVIDENCE and REQUIRES_REVIEW as separate states. Let policy
+      decide whether a result blocks, and keep required NOT_TESTED evidence
+      blocking without fabricating a deterministic result.
+    regression_coverage: yes
+    applies_to:
+      - verification
+      - policy
+      - exit-codes
+      - evidence
+
+  - id: LESSON-0005
+    title: Evidence paths need canonical containment and provenance
+    area: evidence-safety
+    problem: >-
+      Evidence or copied reports can escape the project or follow a link to an
+      unrelated file.
+    root_cause: >-
+      String path checks did not prove canonical containment across symlinks,
+      junctions, reparse points and linked evidence sources.
+    correction: >-
+      Resolve canonical paths, reject link-aware escapes, keep generated
+      evidence separate from project source, and record the devctl, policy and
+      check provenance with the evidence.
+    regression_coverage: yes
+    applies_to:
+      - evidence
+      - filesystem
+      - security
+      - coverage
+
+  - id: LESSON-0006
+    title: Optional workers must receive bounded evidence, not authority
+    area: worker-boundary
+    problem: >-
+      A worker can accidentally become the source of commands, thresholds,
+      statuses, raw logs or policy decisions.
+    root_cause: >-
+      The worker boundary exposed execution controls instead of a narrow
+      versioned request and bounded result packet.
+    correction: >-
+      Keep deterministic execution in ordinary tools and code. Accept only
+      versioned allowlisted operations, bound requests and failure packets, and
+      return summaries and evidence paths instead of raw output or shell text.
+    regression_coverage: yes
+    applies_to:
+      - worker-protocol
+      - handoff
+      - ai-boundary
+      - security
+
+  - id: LESSON-0007
+    title: A PID alone is not process identity on Windows
+    area: process-recovery
+    problem: >-
+      A reused PID can make a dead run appear active or associate a new process
+      with old registry state.
+    root_cause: >-
+      Registry liveness used a numeric PID without a process-start identity.
+    correction: >-
+      Pair the PID with Windows GetProcessTimes start identity, use the Linux
+      process start time where available, and classify mismatches as stale
+      before recovery or restart.
+    regression_coverage: yes
+    applies_to:
+      - registry
+      - windows
+      - process-recovery
+
+  - id: LESSON-0008
+    title: Registry and workflow state must not change verification truth
+    area: multi-project-state
+    problem: >-
+      Registry collisions, stale entries or registry write failures can be
+      mistaken for project verification failures.
+    root_cause: >-
+      Observational run state was coupled too tightly to the deterministic
+      check result and project identity.
+    correction: >-
+      Keep registry and workflow journals isolated, update them atomically,
+      emit bounded warnings for infrastructure problems, and preserve the
+      project's actual check vector, overall status and exit code.
+    regression_coverage: yes
+    applies_to:
+      - registry
+      - workflow
+      - concurrency
+      - verification
+
+  - id: LESSON-0009
+    title: Cancellation after mutation requires exact rollback proof
+    area: repair-safety
+    problem: >-
+      Returning ordinary cancellation after a partial or completed write can
+      leave a project changed while the result claims it was cancelled safely.
+    root_cause: >-
+      Cancellation was checked without restoring and comparing the complete
+      pre-apply baseline, or rollback errors lost their typed identity.
+    correction: >-
+      Roll back after any approved modification, prove exact files, bytes,
+      modes, Git state and provenance, and return the typed rollback/framework
+      error with exit 2 if proof fails. Preserve ErrRollback through wrapping.
+    regression_coverage: yes
+    applies_to:
+      - repair
+      - cancellation
+      - rollback
+      - concurrency
+
+  - id: LESSON-0010
+    title: Approval must bind immutable patch bytes to one repair attempt
+    area: repair-authority
+    problem: >-
+      A displayed diff, an approved hash and the bytes eventually applied can
+      diverge, or a failed attempt can silently start another repair.
+    root_cause: >-
+      The CLI or worker regenerated patches and interpreted approval instead of
+      letting the engine own canonical artifacts, hash binding and attempt count.
+    correction: >-
+      Persist canonical patch bytes, hash the exact bytes, display engine-owned
+      evidence, revalidate the baseline, apply once, validate the actual delta,
+      and stop with no retry, commit, push or merge.
+    regression_coverage: yes
+    applies_to:
+      - repair
+      - approval
+      - provenance
+      - git-boundaries
+
+  - id: LESSON-0011
+    title: Evidence freshness requires a full fingerprint, not a dirty boolean
+    area: cache-validity
+    problem: >-
+      Historical verification can be incorrectly presented as current when the
+      repository changed in a way a simple dirty flag does not capture.
+    root_cause: >-
+      Cache and evidence reuse compared only a boolean or incomplete project
+      state instead of the relevant worktree and index inputs.
+    correction: >-
+      Store and compare a bounded fingerprint containing project identity, Git
+      state, relevant file hashes, configuration, policy, check and devctl
+      versions. Current deterministic evidence overrides historical lessons;
+      cache reuse is advisory and invalidates on mismatch.
+    regression_coverage: yes
+    applies_to:
+      - cache
+      - evidence
+      - context
+      - verification
+
+  - id: LESSON-0012
+    title: A missing race toolchain is a blocked gate, not a pass
+    area: verification-environment
+    problem: >-
+      A race command can be skipped or reported green when CGO or a C compiler
+      is unavailable.
+    root_cause: >-
+      Environment failure was treated as if the requested concurrency evidence
+      had been produced.
+    correction: >-
+      Run the exact race command with CGO enabled and a known compiler, or
+      report the command as blocked/NOT_TESTED with the precise environment
+      error.
+    regression_coverage: yes
+    applies_to:
+      - race
+      - cgo
+      - ci
+      - release-gates
+
+  - id: LESSON-0013
+    title: Canonical artifacts need a cross-platform line-ending policy
+    area: cross-platform
+    problem: >-
+      A patch, evidence file or documentation diff can appear changed only
+      because Windows and Unix tools normalize line endings differently.
+    root_cause: >-
+      Canonical bytes and repository text files had no explicit line-ending
+      boundary.
+    correction: >-
+      Keep canonical patch artifacts UTF-8 with LF, define repository text
+      attributes, normalize affected Markdown deliberately, and use hash/diff
+      checks after normalization.
+    regression_coverage: yes
+    applies_to:
+      - windows
+      - git
+      - repair
+      - documentation
+
+  - id: LESSON-0014
+    title: Generated evidence and Git publication are separate boundaries
+    area: repository-boundaries
+    problem: >-
+      Generated evidence, local caches or an AI suggestion can be mistaken for
+      committed source or authorization to mutate Git history.
+    root_cause: >-
+      Project source, user state, evidence and publication actions were treated
+      as one lifecycle.
+    correction: >-
+      Keep generated evidence and user state outside normal source staging,
+      review the exact diff, and require an explicit human decision before
+      commit, push, merge or any other Git history mutation.
+    regression_coverage: yes
+    applies_to:
+      - git
+      - evidence
+      - cache
+      - release

@@ -112,11 +112,15 @@ resolved evidence directory and target path are checked for filesystem
 containment before either the patch artifact or evidence JSON is written.
 
 Cancellation is an orchestration decision and is checked before approval,
-pre-apply validation, preflight, application, and re-verification. If it
-arrives during a write transaction, the attempted changes are rolled back and
-the baseline snapshot must be proved exact before cancellation is returned.
-Human rejection and human cancellation are separate approval outcomes, and
-post-apply validation failure is persisted with final status `ERROR`.
+pre-apply validation, preflight, application, post-state validation, and
+re-verification. If it arrives during a write transaction, the attempted
+changes are rolled back. Once any approved modification has completed, the
+same rollback proof is required before `CANCELLED` is returned, including
+cancellation immediately after `PATCH_APPLIED` and during or after final
+verification. Human rejection and human cancellation are separate approval
+outcomes, and post-apply validation failure is persisted with final status
+`ERROR`. The proposal provider receives the run context, and the approval
+adapter receives engine-owned evidence without needing to reread the project.
 
 ## Automated negative coverage
 
@@ -151,7 +155,12 @@ The package tests cover:
 - HEAD mutation before apply;
 - worker timeout;
 - distinct approval rejection and cancellation;
-- cancellation before approval, after approval, and during application.
+- cancellation before approval, after approval, during application, after
+  `PATCH_APPLIED`, during post-state validation, and during re-verification;
+- cancellation rollback failure being reported as `ErrRollback`, not ordinary
+  cancellation;
+- provider receipt of the run cancellation context;
+- live repair lifecycle events through the shared event sink.
 
 ## Deliberate limits
 

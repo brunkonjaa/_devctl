@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"devctl/internal/events"
 	"devctl/internal/model"
 	"devctl/internal/verify"
 )
@@ -34,7 +35,7 @@ func TestSyntheticGoRepairLifecycle(t *testing.T) {
 			verificationCalls++
 			return verify.ProjectWithOptions(ctx, path, verify.Options{RunID: fmt.Sprintf("synthetic-run-%d", verificationCalls)})
 		},
-		Propose: func(task Task) (Proposal, error) {
+		Propose: func(_ context.Context, task Task) (Proposal, error) {
 			if task.Failure.Overall != model.Fail || task.ProjectID != "synthetic-repair" {
 				t.Fatalf("unexpected repair task: %+v", task)
 			}
@@ -125,7 +126,7 @@ func TestRepairRejectsForbiddenPolicyPathBeforeApprovalWriteOrReverification(t *
 		verificationCalls++
 		return model.Report{RunID: fmt.Sprintf("run-%d", verificationCalls), Overall: model.Fail, Project: &model.Project{Identity: "synthetic-repair", Path: root}, Checks: []model.CheckResult{{ID: "synthetic-check", Status: model.Fail, Blocking: true, Summary: "FAIL"}}}
 	}
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{{Path: "config/defaults.json", Content: []byte("{\"version\":\"tampered\"}\n")}}}, nil
 	}
 	options.Approve = func(ApprovalRequest) (ApprovalDecision, error) {
@@ -152,7 +153,7 @@ func TestRepairRejectsForbiddenPathInAllowlistBeforeWorkerInvocation(t *testing.
 	root := makeSyntheticProject(t)
 	workerCalled := false
 	options := fakeOptions(root, []string{"calculator.go", "config/defaults.json"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		workerCalled = true
 		return Proposal{}, nil
 	}
@@ -186,7 +187,7 @@ func TestRepairTaskCarriesBaselineMetadataAndRejectsWorkerMetadataMutation(t *te
 	root := makeSyntheticProject(t)
 	var observed Task
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		observed = cloneTask(task)
 		task.CanonicalProject.Root = "tampered-root"
 		task.ForbiddenPathPolicyVersion = "tampered-policy-version"
@@ -219,7 +220,15 @@ func TestRepairTaskCarriesBaselineMetadataAndRejectsWorkerMetadataMutation(t *te
 
 func TestRepairPersistsCompleteBaselineAndApprovalEvidence(t *testing.T) {
 	root := makeSyntheticProject(t)
-	result, err := Run(context.Background(), fakeOptions(root, []string{"calculator.go"}, passAfterRepair()))
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	var approvalView ApprovalEvidenceView
+	options.Approve = func(request ApprovalRequest) (ApprovalDecision, error) {
+		approvalView = cloneApprovalEvidence(request.Evidence)
+		request.Evidence.ForbiddenPathClasses[0] = "tampered"
+		request.Evidence.Files[0].PreHash = "tampered"
+		return ApprovalDecision{Approved: true, DiffHash: request.DiffHash}, nil
+	}
+	result, err := Run(context.Background(), options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +244,22 @@ func TestRepairPersistsCompleteBaselineAndApprovalEvidence(t *testing.T) {
 	}
 	if persisted.Approval.Outcome != ApprovalApproved || persisted.Approval.WorkerID != "test" || persisted.Approval.DiffHash != result.DiffHash || persisted.Approval.DisplayHash != result.DisplayHash {
 		t.Fatalf("approval evidence was not persisted: %+v", persisted.Approval)
+	}
+	if approvalView.CanonicalProject != result.Baseline.CanonicalProject || approvalView.PolicyProvenanceHash != result.Baseline.PolicyProvenanceHash || approvalView.DevctlProvenance != result.Baseline.DevctlProvenance || approvalView.PatchArtifact != result.PatchArtifact || approvalView.EvidencePath != result.EvidencePath {
+		t.Fatalf("approval view was not derived from baseline-bound engine state: %+v", approvalView)
+	}
+	if len(approvalView.ForbiddenPathClasses) != len(result.Baseline.ForbiddenPathClasses) || approvalView.ForbiddenPathClasses[0] == "tampered" || approvalView.Files[0].PreHash == "tampered" {
+		t.Fatalf("approval view was not isolated from callback mutation: %+v", approvalView)
+	}
+	var baselineCalculator FileSnapshot
+	for _, file := range result.Baseline.Files {
+		if file.Path == "calculator.go" {
+			baselineCalculator = file
+			break
+		}
+	}
+	if approvalView.Files[0].PreHash != baselineCalculator.Hash || approvalView.Files[0].PostHash == "" || approvalView.Files[0].PostBytes == 0 || approvalView.Files[0].PreMode != approvalView.Files[0].PostMode {
+		t.Fatalf("approval file evidence was incomplete: %+v", approvalView.Files)
 	}
 }
 
@@ -256,7 +281,7 @@ func TestRepairRejectsUnsafeTaskIDs(t *testing.T) {
 func TestRepairRejectsWorkerIdentityMismatch(t *testing.T) {
 	root := makeSyntheticProject(t)
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "untrusted-worker", Changes: []FileChange{{Path: "calculator.go", Content: []byte("package calculator\n")}}}, nil
 	}
 	_, err := Run(context.Background(), options)
@@ -284,7 +309,7 @@ func TestRepairRejectsOversizedMalformedAndDeletionProposals(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := makeSyntheticProject(t)
 			options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-			options.Propose = func(task Task) (Proposal, error) { return test.proposal(task), nil }
+			options.Propose = func(_ context.Context, task Task) (Proposal, error) { return test.proposal(task), nil }
 			_, err := Run(context.Background(), options)
 			if err == nil || !strings.Contains(err.Error(), test.wantText) {
 				t.Fatalf("expected proposal rejection containing %q, got %v", test.wantText, err)
@@ -309,7 +334,7 @@ func TestRepairRejectsHeadMutationBeforeApply(t *testing.T) {
 func TestRepairRejectsWorkerTimeout(t *testing.T) {
 	root := makeSyntheticProject(t)
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(Task) (Proposal, error) { return Proposal{}, context.DeadlineExceeded }
+	options.Propose = func(_ context.Context, _ Task) (Proposal, error) { return Proposal{}, context.DeadlineExceeded }
 	_, err := Run(context.Background(), options)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected worker timeout, got %v", err)
@@ -406,6 +431,176 @@ func TestRepairCancellationDuringApplyRestoresExactBaseline(t *testing.T) {
 	}
 }
 
+func TestRepairCancellationImmediatelyAfterPatchAppliedRestoresBaseline(t *testing.T) {
+	root := makeSyntheticProject(t)
+	baseline, err := captureSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	options.ProgressSink = progressFunc(func(event events.Event) {
+		if event.EventType == events.RepairLifecycle && event.Status == "PATCH_APPLIED" {
+			cancel()
+		}
+	})
+	result, err := Run(ctx, options)
+	if !errors.Is(err, ErrCancelled) || result.Approval.Outcome != ApprovalCancelled {
+		t.Fatalf("expected cancellation after PATCH_APPLIED, got result=%+v err=%v", result, err)
+	}
+	if countEvent(result.Events, "VERIFY_STARTED") != 0 {
+		t.Fatal("cancelled repair started a second verification")
+	}
+	restored, snapshotErr := captureSnapshot(root)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	if !snapshotsEqual(baseline, restored) {
+		t.Fatal("cancellation after PATCH_APPLIED did not restore the exact baseline")
+	}
+}
+
+func TestRepairCancellationDuringPostStateValidationRestoresBaseline(t *testing.T) {
+	root := makeSyntheticProject(t)
+	baseline, err := captureSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	options.ProgressSink = progressFunc(func(event events.Event) {
+		if event.EventType == events.RepairLifecycle && event.Status == "POST_STATE_CAPTURED" {
+			cancel()
+		}
+	})
+	result, err := Run(ctx, options)
+	if !errors.Is(err, ErrCancelled) || result.Approval.Outcome != ApprovalCancelled {
+		t.Fatalf("expected post-state cancellation, got result=%+v err=%v", result, err)
+	}
+	if countEvent(result.Events, "VERIFY_STARTED") != 0 {
+		t.Fatal("post-state cancellation started re-verification")
+	}
+	restored, snapshotErr := captureSnapshot(root)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	if !snapshotsEqual(baseline, restored) {
+		t.Fatal("post-state cancellation did not restore the exact baseline")
+	}
+}
+
+func TestRepairCancellationDuringDeterministicReverificationRestoresBaseline(t *testing.T) {
+	root := makeSyntheticProject(t)
+	baseline, err := captureSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	verificationCalls := 0
+	options.Verify = func(runContext context.Context, path string) model.Report {
+		verificationCalls++
+		if verificationCalls == 2 {
+			cancel()
+		}
+		status := model.Fail
+		if verificationCalls == 2 {
+			status = model.Pass
+		}
+		return model.Report{RunID: fmt.Sprintf("run-%d", verificationCalls), Overall: status, Project: &model.Project{Identity: "synthetic-repair", Path: path}}
+	}
+	result, err := Run(ctx, options)
+	if !errors.Is(err, ErrCancelled) || result.Approval.Outcome != ApprovalCancelled {
+		t.Fatalf("expected re-verification cancellation, got result=%+v err=%v", result, err)
+	}
+	if verificationCalls != 2 {
+		t.Fatalf("expected exactly one baseline and one re-verification, got %d", verificationCalls)
+	}
+	restored, snapshotErr := captureSnapshot(root)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	if !snapshotsEqual(baseline, restored) {
+		t.Fatal("re-verification cancellation did not restore the exact baseline")
+	}
+}
+
+func TestRepairCancellationRollbackFailureIsNotReportedAsCancellation(t *testing.T) {
+	root := makeSyntheticProject(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	verificationCalls := 0
+	options.Verify = func(runContext context.Context, path string) model.Report {
+		verificationCalls++
+		if verificationCalls == 2 {
+			if removeErr := os.Remove(filepath.Join(root, "calculator.go")); removeErr != nil {
+				t.Fatalf("remove applied file: %v", removeErr)
+			}
+			if mkdirErr := os.Mkdir(filepath.Join(root, "calculator.go"), 0o755); mkdirErr != nil {
+				t.Fatalf("replace applied file with directory: %v", mkdirErr)
+			}
+			cancel()
+		}
+		status := model.Fail
+		if verificationCalls == 2 {
+			status = model.Pass
+		}
+		return model.Report{RunID: fmt.Sprintf("run-%d", verificationCalls), Overall: status, Project: &model.Project{Identity: "synthetic-repair", Path: path}}
+	}
+	result, err := Run(ctx, options)
+	if errors.Is(err, ErrCancelled) || !errors.Is(err, ErrRollback) || result.Approval.Outcome == ApprovalCancelled && result.Error == "" {
+		t.Fatalf("rollback failure was reported as ordinary cancellation: result=%+v err=%v", result, err)
+	}
+}
+
+func TestRepairProviderReceivesRunContext(t *testing.T) {
+	root := makeSyntheticProject(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	providerCalled := false
+	options.Propose = func(providerContext context.Context, _ Task) (Proposal, error) {
+		providerCalled = true
+		cancel()
+		<-providerContext.Done()
+		return Proposal{}, providerContext.Err()
+	}
+	result, err := Run(ctx, options)
+	if !providerCalled || !errors.Is(err, context.Canceled) || result.Approved {
+		t.Fatalf("provider context cancellation was not propagated: result=%+v err=%v", result, err)
+	}
+}
+
+func TestRepairProgressIsLiveAndCannotChangeDecision(t *testing.T) {
+	root := makeSyntheticProject(t)
+	proposalSeen := false
+	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
+	options.ProgressSink = progressFunc(func(event events.Event) {
+		if event.EventType != events.RepairLifecycle {
+			return
+		}
+		if event.Status == "PROPOSAL_VALIDATED" {
+			proposalSeen = true
+		}
+		// The event is a value passed through the existing observational seam.
+		event.Status = "REJECTED"
+	})
+	options.Approve = func(request ApprovalRequest) (ApprovalDecision, error) {
+		if !proposalSeen {
+			t.Fatal("progress was not delivered before approval")
+		}
+		return ApprovalDecision{Approved: true, DiffHash: request.DiffHash}, nil
+	}
+	result, err := Run(context.Background(), options)
+	if err != nil || !result.Approved || countEvent(result.Events, "REPAIR_STOPPED") != 1 {
+		t.Fatalf("progress observer changed repair execution: result=%+v err=%v", result, err)
+	}
+}
+
 func TestRepairRejectsDirtyBaseline(t *testing.T) {
 	root := makeSyntheticProject(t)
 	os.WriteFile(filepath.Join(root, "calculator.go"), []byte("dirty\n"), 0o644)
@@ -450,7 +645,7 @@ func TestRepairUsesImmutablePatchAfterApprovalCallbackMutation(t *testing.T) {
 	root := makeSyntheticProject(t)
 	expected := []byte("package calculator\nfunc Add(left, right int) int { return left + right }\n")
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{{Path: "calculator.go", Content: expected}}}, nil
 	}
 	options.Approve = func(request ApprovalRequest) (ApprovalDecision, error) {
@@ -501,7 +696,7 @@ func TestRepairRejectsStoredArtifactMutationAfterApproval(t *testing.T) {
 func TestRepairRejectsWorkerError(t *testing.T) {
 	root := makeSyntheticProject(t)
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, _ Task) (Proposal, error) {
 		return Proposal{}, errors.New("worker stopped")
 	}
 	_, err := Run(context.Background(), options)
@@ -599,7 +794,7 @@ func TestRepairRollbackMustProveExactRestoration(t *testing.T) {
 	git(t, root, "add", "helper.go")
 	git(t, root, "commit", "-m", "add helper")
 	options := fakeOptions(root, []string{"calculator.go", "helper.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{
 			{Path: "calculator.go", Content: []byte("package calculator\nfunc Add(left, right int) int { return left + right }\n")},
 			{Path: "helper.go", Content: []byte("package calculator\nfunc Helper() int { return 2 }\n")},
@@ -632,7 +827,7 @@ func TestRepairRollbackMustProveExactRestoration(t *testing.T) {
 func TestRepairRejectsBinaryProposalContent(t *testing.T) {
 	root := makeSyntheticProject(t)
 	options := fakeOptions(root, []string{"calculator.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{{Path: "calculator.go", Content: []byte{0xff, 0xfe, 0, 1}}}}, nil
 	}
 	_, err := Run(context.Background(), options)
@@ -654,7 +849,7 @@ func TestRepairRejectsForbiddenAndUntrustedPaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := makeSyntheticProject(t)
 			options := fakeOptions(root, test.allowed, passAfterRepair())
-			options.Propose = func(task Task) (Proposal, error) {
+			options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 				return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{{Path: test.path, Content: []byte("package calculator\n")}}}, nil
 			}
 			_, err := Run(context.Background(), options)
@@ -685,7 +880,7 @@ func TestRepairRollsBackPartialApplication(t *testing.T) {
 	originalCalculator := readProjectFile(t, root, "calculator.go")
 	originalHelper := readProjectFile(t, root, "helper.go")
 	options := fakeOptions(root, []string{"calculator.go", "helper.go"}, passAfterRepair())
-	options.Propose = func(task Task) (Proposal, error) {
+	options.Propose = func(_ context.Context, task Task) (Proposal, error) {
 		return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{
 			{Path: "calculator.go", Content: []byte("package calculator\nfunc Add(left, right int) int { return left + right }\n")},
 			{Path: "helper.go", Content: []byte("package calculator\nfunc Helper() int { return 2 }\n")},
@@ -770,7 +965,7 @@ func fakeOptions(root string, allowed []string, final model.Status) Options {
 			}
 			return model.Report{RunID: fmt.Sprintf("run-%d", verificationCalls), Overall: status, DevctlVersion: "test-devctl-version", DevctlCommit: "test-devctl-commit", DevctlDirty: false, PolicyVersion: "test-policy-version", Project: &model.Project{Identity: "synthetic-repair", Path: root}, Checks: []model.CheckResult{{ID: "synthetic-check", Status: status, Blocking: true, Summary: string(status)}}}
 		},
-		Propose: func(task Task) (Proposal, error) {
+		Propose: func(_ context.Context, task Task) (Proposal, error) {
 			return Proposal{SchemaVersion: ProtocolVersion, TaskID: task.TaskID, Worker: "test", Changes: []FileChange{{Path: "calculator.go", Content: []byte("package calculator\nfunc Add(left, right int) int { return left + right }\n")}}}, nil
 		},
 		Approve: func(request ApprovalRequest) (ApprovalDecision, error) {
@@ -849,4 +1044,10 @@ func countEvent(events []Event, eventType string) int {
 		}
 	}
 	return count
+}
+
+type progressFunc func(events.Event)
+
+func (function progressFunc) Publish(event events.Event) {
+	function(event)
 }

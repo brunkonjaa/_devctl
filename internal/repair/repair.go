@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"devctl/internal/events"
 	"devctl/internal/handoff"
 	"devctl/internal/model"
 	"devctl/internal/registry"
@@ -56,21 +57,25 @@ var (
 
 type VerifyFunc func(context.Context, string) model.Report
 
-type ProposeFunc func(Task) (Proposal, error)
+type VerificationExitCodeFunc func(model.Report) int
+
+type ProposeFunc func(context.Context, Task) (Proposal, error)
 
 type ApproveFunc func(ApprovalRequest) (ApprovalDecision, error)
 
 type Options struct {
-	ProjectPath  string
-	ProjectID    string
-	TaskID       string
-	Worker       string
-	Attempt      int
-	AllowedPaths []string
-	Verify       VerifyFunc
-	Propose      ProposeFunc
-	Approve      ApproveFunc
-	WriteFile    func(path string, data []byte, mode fs.FileMode) error
+	ProjectPath          string
+	ProjectID            string
+	TaskID               string
+	Worker               string
+	Attempt              int
+	AllowedPaths         []string
+	Verify               VerifyFunc
+	VerificationExitCode VerificationExitCodeFunc
+	Propose              ProposeFunc
+	Approve              ApproveFunc
+	ProgressSink         events.Sink
+	WriteFile            func(path string, data []byte, mode fs.FileMode) error
 }
 
 type Task struct {
@@ -111,6 +116,28 @@ type ApprovalRequest struct {
 	CanonicalPatch []byte
 	DiffHash       string
 	DisplayDiff    string
+	Evidence       ApprovalEvidenceView
+}
+
+type ApprovalEvidenceView struct {
+	CanonicalProject           CanonicalProjectMetadata
+	ForbiddenPathPolicyVersion string
+	ForbiddenPathClasses       []string
+	DevctlProvenance           DevctlProvenance
+	PolicyProvenanceHash       string
+	PatchArtifact              string
+	EvidencePath               string
+	Files                      []ApprovalFileEvidence
+}
+
+type ApprovalFileEvidence struct {
+	Path      string
+	PreHash   string
+	PostHash  string
+	PreBytes  int64
+	PostBytes int64
+	PreMode   fs.FileMode
+	PostMode  fs.FileMode
 }
 
 type ApprovalOutcome string
@@ -144,29 +171,31 @@ type FileProvenance struct {
 }
 
 type Result struct {
-	SchemaVersion  string           `json:"schema_version"`
-	TaskID         string           `json:"task_id"`
-	ProjectID      string           `json:"project_id"`
-	Attempt        int              `json:"attempt"`
-	BaselineRunID  string           `json:"baseline_run_id,omitempty"`
-	FinalRunID     string           `json:"final_run_id,omitempty"`
-	InitialStatus  model.Status     `json:"initial_status"`
-	FinalStatus    model.Status     `json:"final_status"`
-	DiffHash       string           `json:"diff_hash,omitempty"`
-	ActualDiffHash string           `json:"actual_diff_hash,omitempty"`
-	PatchArtifact  string           `json:"patch_artifact,omitempty"`
-	DisplayDiff    string           `json:"display_diff,omitempty"`
-	DisplayHash    string           `json:"display_hash,omitempty"`
-	WorkerID       string           `json:"worker_id,omitempty"`
-	Approved       bool             `json:"approved"`
-	Task           *Task            `json:"task,omitempty"`
-	Proposal       *Proposal        `json:"proposal,omitempty"`
-	Approval       ApprovalEvidence `json:"approval"`
-	Baseline       BaselineEvidence `json:"baseline"`
-	Files          []FileProvenance `json:"files,omitempty"`
-	Events         []Event          `json:"events"`
-	EvidencePath   string           `json:"evidence_path,omitempty"`
-	Error          string           `json:"error,omitempty"`
+	SchemaVersion   string           `json:"schema_version"`
+	TaskID          string           `json:"task_id"`
+	ProjectID       string           `json:"project_id"`
+	Attempt         int              `json:"attempt"`
+	BaselineRunID   string           `json:"baseline_run_id,omitempty"`
+	FinalRunID      string           `json:"final_run_id,omitempty"`
+	InitialStatus   model.Status     `json:"initial_status"`
+	FinalStatus     model.Status     `json:"final_status"`
+	InitialExitCode int              `json:"initial_exit_code"`
+	FinalExitCode   int              `json:"final_exit_code"`
+	DiffHash        string           `json:"diff_hash,omitempty"`
+	ActualDiffHash  string           `json:"actual_diff_hash,omitempty"`
+	PatchArtifact   string           `json:"patch_artifact,omitempty"`
+	DisplayDiff     string           `json:"display_diff,omitempty"`
+	DisplayHash     string           `json:"display_hash,omitempty"`
+	WorkerID        string           `json:"worker_id,omitempty"`
+	Approved        bool             `json:"approved"`
+	Task            *Task            `json:"task,omitempty"`
+	Proposal        *Proposal        `json:"proposal,omitempty"`
+	Approval        ApprovalEvidence `json:"approval"`
+	Baseline        BaselineEvidence `json:"baseline"`
+	Files           []FileProvenance `json:"files,omitempty"`
+	Events          []Event          `json:"events"`
+	EvidencePath    string           `json:"evidence_path,omitempty"`
+	Error           string           `json:"error,omitempty"`
 }
 
 type ApprovalEvidence struct {
@@ -248,6 +277,10 @@ type fileBackup struct {
 
 func Run(ctx context.Context, options Options) (Result, error) {
 	result := Result{SchemaVersion: ProtocolVersion, TaskID: options.TaskID, ProjectID: options.ProjectID, Attempt: options.Attempt, WorkerID: options.Worker}
+	progressCtx := ctx
+	if options.ProgressSink != nil {
+		progressCtx = events.WithSink(ctx, events.NewStream(options.ProgressSink))
+	}
 	if options.Attempt != 1 {
 		return stop(result, model.Error, ErrSecondAttempt)
 	}
@@ -270,15 +303,17 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if err := validateAllowedPaths(options.AllowedPaths); err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
-	baselineReport := options.Verify(ctx, root)
+	baselineReport := options.Verify(progressCtx, root)
 	if err := checkCancelled(ctx); err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
 	result.InitialStatus = baselineReport.Overall
+	result.InitialExitCode = verificationExitCode(options, baselineReport)
 	result.BaselineRunID = boundedText(baselineReport.RunID)
 	if baselineReport.Overall != model.Fail {
 		result.FinalStatus = baselineReport.Overall
-		addEvent(&result, "REPAIR_STOPPED", "baseline was not FAIL")
+		result.FinalExitCode = result.InitialExitCode
+		addRepairEvent(progressCtx, &result, "REPAIR_STOPPED", "baseline was not FAIL")
 		return persist(root, result)
 	}
 	baseline, err := captureSnapshot(root)
@@ -293,6 +328,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	}
 	result.ProjectID = baseline.Identity
 	result.Baseline = baseline.evidence(baselineReport)
+	progressCtx = events.WithMetadata(progressCtx, baselineReport.RunID, baseline.Identity)
 	packet := boundedFailurePacket(handoff.FromReport(baselineReport))
 	policyClasses := forbiddenPathClasses()
 	task := Task{
@@ -312,26 +348,26 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	}
 	taskForWorker := cloneTask(task)
 	result.Task = &task
-	addEvent(&result, "REPAIR_TASK_CREATED", "bounded failure task created")
-	addEvent(&result, "BASELINE_CAPTURED", "clean repository state captured")
+	addRepairEvent(progressCtx, &result, "REPAIR_TASK_CREATED", "bounded failure task created")
+	addRepairEvent(progressCtx, &result, "BASELINE_CAPTURED", "clean repository state captured")
 	if err := checkCancelled(ctx); err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
-	proposal, err := options.Propose(taskForWorker)
+	proposal, err := options.Propose(progressCtx, taskForWorker)
 	if err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
 	if err := checkCancelled(ctx); err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
-	addEvent(&result, "WORKER_PROPOSAL_RECEIVED", "proposal received")
+	addRepairEvent(progressCtx, &result, "WORKER_PROPOSAL_RECEIVED", "proposal received")
 	canonical, changes, err := canonicalizeProposal(root, task, proposal)
 	if err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
 	hash := sha256Hex(canonical)
 	result.DiffHash = hash
-	addEvent(&result, "PROPOSAL_VALIDATED", "proposal scope and patch bounds validated")
+	addRepairEvent(progressCtx, &result, "PROPOSAL_VALIDATED", "proposal scope and patch bounds validated")
 	artifactPath, err := persistPatchArtifact(root, task.TaskID, canonical)
 	if err != nil {
 		return stopAt(root, result, model.Error, err)
@@ -356,18 +392,26 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	result.DisplayHash = sha256Hex([]byte(diffText))
 	result.Proposal = &Proposal{SchemaVersion: proposal.SchemaVersion, TaskID: proposal.TaskID, Worker: options.Worker, Changes: proposalChanges(changes)}
 	result.Approval = ApprovalEvidence{TaskID: task.TaskID, ProjectID: task.ProjectID, WorkerID: options.Worker, Protocol: ProtocolVersion, DiffHash: hash, DisplayHash: result.DisplayHash}
-	addEvent(&result, "PATCH_ARTIFACT_STORED", "immutable canonical patch artifact stored")
-	addEvent(&result, "DIFF_DISPLAYED", "exact diff displayed for approval")
-	if err := checkCancelled(ctx); err != nil {
-		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled before approval")
+	evidencePath, _, err := safeRepairPath(root, task.TaskID, ".json")
+	if err != nil {
 		return stopAt(root, result, model.Error, err)
 	}
-	decision, err := options.Approve(ApprovalRequest{TaskID: task.TaskID, ProjectID: task.ProjectID, BaselineRunID: task.RunID, WorkerID: options.Worker, Protocol: ProtocolVersion, Failure: task.Failure, CanonicalPatch: append([]byte(nil), storedPatch...), DiffHash: hash, DisplayDiff: diffText})
+	approvalView, err := buildApprovalEvidence(task, baseline, changes, artifactPath, evidencePath)
+	if err != nil {
+		return stopAt(root, result, model.Error, err)
+	}
+	addRepairEvent(progressCtx, &result, "PATCH_ARTIFACT_STORED", "immutable canonical patch artifact stored")
+	addRepairEvent(progressCtx, &result, "DIFF_DISPLAYED", "exact diff displayed for approval")
+	if err := checkCancelled(ctx); err != nil {
+		result.Approval.Outcome = ApprovalCancelled
+		addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled before approval")
+		return stopAt(root, result, model.Error, err)
+	}
+	decision, err := options.Approve(ApprovalRequest{TaskID: task.TaskID, ProjectID: task.ProjectID, BaselineRunID: task.RunID, WorkerID: options.Worker, Protocol: ProtocolVersion, Failure: task.Failure, CanonicalPatch: append([]byte(nil), storedPatch...), DiffHash: hash, DisplayDiff: diffText, Evidence: cloneApprovalEvidence(approvalView)})
 	if err != nil {
 		if errors.Is(err, ErrApprovalCancelled) || errors.Is(err, context.Canceled) {
 			result.Approval.Outcome = ApprovalCancelled
-			addEvent(&result, "CANCELLED", "human approval was cancelled")
+			addRepairEvent(progressCtx, &result, "CANCELLED", "human approval was cancelled")
 			if ctx.Err() != nil {
 				return stopAt(root, result, model.Error, checkCancelled(ctx))
 			}
@@ -385,21 +429,21 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	}
 	result.Approval.Outcome = outcome
 	if outcome == ApprovalCancelled {
-		addEvent(&result, "CANCELLED", "human approval was cancelled")
+		addRepairEvent(progressCtx, &result, "CANCELLED", "human approval was cancelled")
 		return stopAt(root, result, model.Error, ErrApprovalCancelled)
 	}
 	if outcome != ApprovalApproved {
-		addEvent(&result, "REJECTED", "human rejected the exact diff")
+		addRepairEvent(progressCtx, &result, "REJECTED", "human rejected the exact diff")
 		return stopAt(root, result, model.Error, ErrApprovalRejected)
 	}
 	if decision.DiffHash != hash {
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: approval hash %q, proposal hash %q", ErrDiffMismatch, decision.DiffHash, hash))
 	}
 	result.Approved = true
-	addEvent(&result, "APPROVED", "human approved the exact diff")
+	addRepairEvent(progressCtx, &result, "APPROVED", "human approved the exact diff")
 	if err := checkCancelled(ctx); err != nil {
 		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled after approval")
+		addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled after approval")
 		return stopAt(root, result, model.Error, err)
 	}
 	storedPatch, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(artifactPath)))
@@ -415,7 +459,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	}
 	if err := checkCancelled(ctx); err != nil {
 		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled before pre-apply validation")
+		addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled before pre-apply validation")
 		return stopAt(root, result, model.Error, err)
 	}
 	current, err := captureSnapshot(root)
@@ -425,19 +469,19 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if !snapshotsEqual(baseline, current) {
 		return stopAt(root, result, model.Error, ErrBaselineChanged)
 	}
-	addEvent(&result, "PRE_APPLY_STATE_VALIDATED", "approved baseline still matches")
+	addRepairEvent(progressCtx, &result, "PRE_APPLY_STATE_VALIDATED", "approved baseline still matches")
 	if err := checkCancelled(ctx); err != nil {
 		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled before patch preflight")
+		addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled before patch preflight")
 		return stopAt(root, result, model.Error, err)
 	}
 	if err := preflight(root, changes, baseline); err != nil {
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: %v", ErrPatchPreflight, err))
 	}
-	addEvent(&result, "PATCH_PREFLIGHT", "complete patch applicability validated")
+	addRepairEvent(progressCtx, &result, "PATCH_PREFLIGHT", "complete patch applicability validated")
 	if err := checkCancelled(ctx); err != nil {
 		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled before patch application")
+		addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled before patch application")
 		return stopAt(root, result, model.Error, err)
 	}
 	writer := options.WriteFile
@@ -448,12 +492,18 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if err != nil {
 		if errors.Is(err, ErrCancelled) {
 			result.Approval.Outcome = ApprovalCancelled
-			addEvent(&result, "CANCELLED", "orchestration was cancelled during patch application")
+			addRepairEvent(progressCtx, &result, "CANCELLED", "orchestration was cancelled during patch application")
 		}
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: %w", ErrApply, err))
 	}
-	addEvent(&result, "PATCH_APPLIED", "approved patch applied as one transaction")
+	addRepairEvent(progressCtx, &result, "PATCH_APPLIED", "approved patch applied as one transaction")
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled after patch application"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	post, err := captureSnapshot(root)
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled during post-state validation"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	if err != nil {
 		if rollbackErr := rollbackPostApplyAndProve(root, backups, baseline); rollbackErr != nil {
 			return stopAt(root, result, model.Error, rollbackErr)
@@ -461,48 +511,57 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		return stopAt(root, result, model.Error, err)
 	}
 	actualPatch, err := reconstructActualPatch(root, changes)
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled during post-state validation"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	if err != nil {
 		if rollbackErr := rollbackPostApplyAndProve(root, backups, baseline); rollbackErr != nil {
 			return stopAt(root, result, model.Error, rollbackErr)
 		}
-		addEvent(&result, "POST_STATE_VALIDATION_FAILED", "post-apply patch could not be reconstructed")
+		addRepairEvent(progressCtx, &result, "POST_STATE_VALIDATION_FAILED", "post-apply patch could not be reconstructed")
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: %v", ErrPostState, err))
 	}
 	result.ActualDiffHash = sha256Hex(actualPatch)
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled during post-state validation"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	if result.ActualDiffHash != result.DiffHash {
 		if rollbackErr := rollbackPostApplyAndProve(root, backups, baseline); rollbackErr != nil {
 			return stopAt(root, result, model.Error, rollbackErr)
 		}
-		addEvent(&result, "POST_STATE_VALIDATION_FAILED", "actual post-change diff hash did not match the approved hash")
+		addRepairEvent(progressCtx, &result, "POST_STATE_VALIDATION_FAILED", "actual post-change diff hash did not match the approved hash")
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: actual hash %q, approved hash %q", ErrPostState, result.ActualDiffHash, result.DiffHash))
 	}
 	provenance, err := deltaProvenance(baseline, post, changes)
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled during post-state validation"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	if err != nil {
 		if rollbackErr := rollbackPostApplyAndProve(root, backups, baseline); rollbackErr != nil {
 			return stopAt(root, result, model.Error, rollbackErr)
 		}
-		addEvent(&result, "POST_STATE_VALIDATION_FAILED", "post-apply state did not match the approved patch")
+		addRepairEvent(progressCtx, &result, "POST_STATE_VALIDATION_FAILED", "post-apply state did not match the approved patch")
 		return stopAt(root, result, model.Error, fmt.Errorf("%w: %v", ErrPostState, err))
 	}
 	result.Files = provenance
-	addEvent(&result, "POST_STATE_CAPTURED", "post-apply state captured")
-	addEvent(&result, "DELTA_VALIDATED", "actual delta matches approved patch")
-	if err := checkCancelled(ctx); err != nil {
-		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled before re-verification")
-		return stopAt(root, result, model.Error, err)
+	addRepairEvent(progressCtx, &result, "POST_STATE_CAPTURED", "post-apply state captured")
+	addRepairEvent(progressCtx, &result, "DELTA_VALIDATED", "actual delta matches approved patch")
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled before re-verification"); stopped {
+		return cancelledResult, cancellationErr
 	}
-	addEvent(&result, "VERIFY_STARTED", "deterministic re-verification started")
-	finalReport := options.Verify(ctx, root)
+	addRepairEvent(progressCtx, &result, "VERIFY_STARTED", "deterministic re-verification started")
+	finalReport := options.Verify(progressCtx, root)
 	result.FinalRunID = boundedText(finalReport.RunID)
 	result.FinalStatus = finalReport.Overall
-	if err := checkCancelled(ctx); err != nil {
-		result.Approval.Outcome = ApprovalCancelled
-		addEvent(&result, "CANCELLED", "orchestration was cancelled after re-verification")
-		return stopAt(root, result, model.Error, err)
+	result.FinalExitCode = verificationExitCode(options, finalReport)
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled after re-verification"); stopped {
+		return cancelledResult, cancellationErr
 	}
-	addEvent(&result, "VERIFY_FINISHED", "deterministic re-verification finished")
-	addEvent(&result, "REPAIR_STOPPED", "one repair attempt completed")
+	addRepairEvent(progressCtx, &result, "VERIFY_FINISHED", "deterministic re-verification finished")
+	addRepairEvent(progressCtx, &result, "REPAIR_STOPPED", "one repair attempt completed")
+	if cancelledResult, cancellationErr, stopped := rollbackOnPostApplyCancellation(ctx, progressCtx, root, result, backups, baseline, "orchestration was cancelled after re-verification"); stopped {
+		return cancelledResult, cancellationErr
+	}
 	return persist(root, result)
 }
 
@@ -524,6 +583,22 @@ func stopAt(root string, result Result, status model.Status, err error) (Result,
 	return persisted, writeErr
 }
 
+func rollbackOnPostApplyCancellation(ctx, progressCtx context.Context, root string, result Result, backups []fileBackup, baseline snapshot, message string) (Result, error, bool) {
+	cancellationErr := checkCancelled(ctx)
+	if cancellationErr == nil {
+		return result, nil, false
+	}
+	result.Approval.Outcome = ApprovalCancelled
+	addRepairEvent(progressCtx, &result, "CANCELLED", message)
+	if rollbackErr := rollbackPostApplyAndProve(root, backups, baseline); rollbackErr != nil {
+		addRepairEvent(progressCtx, &result, "ROLLBACK_FAILED", "cancelled repair could not prove baseline restoration")
+		stopped, stopErr := stopAt(root, result, model.Error, rollbackErr)
+		return stopped, stopErr, true
+	}
+	stopped, stopErr := stopAt(root, result, model.Error, cancellationErr)
+	return stopped, stopErr, true
+}
+
 func checkCancelled(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
@@ -531,6 +606,17 @@ func checkCancelled(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+func verificationExitCode(options Options, report model.Report) int {
+	if options.VerificationExitCode == nil {
+		return 0
+	}
+	code := options.VerificationExitCode(report)
+	if code < 0 || code > 255 {
+		return 2
+	}
+	return code
 }
 
 func persistPatchArtifact(root, taskID string, data []byte) (string, error) {
@@ -736,6 +822,37 @@ func cloneTask(value Task) Task {
 		clone.Failure.Failures[index].EvidencePaths = append([]string(nil), failure.EvidencePaths...)
 		clone.Failure.Failures[index].Findings = append([]model.Finding(nil), failure.Findings...)
 	}
+	return clone
+}
+
+func buildApprovalEvidence(task Task, baseline snapshot, changes []canonicalFileChange, patchArtifact, evidencePath string) (ApprovalEvidenceView, error) {
+	files := make([]ApprovalFileEvidence, 0, len(changes))
+	for _, change := range changes {
+		state, ok := baseline.Files[change.Path]
+		if !ok {
+			return ApprovalEvidenceView{}, fmt.Errorf("approval evidence is missing baseline file: %s", change.Path)
+		}
+		files = append(files, ApprovalFileEvidence{
+			Path: change.Path, PreHash: state.Hash, PostHash: sha256Hex(change.Postimage),
+			PreBytes: state.Bytes, PostBytes: int64(len(change.Postimage)), PreMode: state.Mode, PostMode: state.Mode,
+		})
+	}
+	return ApprovalEvidenceView{
+		CanonicalProject:           task.CanonicalProject,
+		ForbiddenPathPolicyVersion: task.ForbiddenPathPolicyVersion,
+		ForbiddenPathClasses:       append([]string(nil), task.ForbiddenPathClasses...),
+		DevctlProvenance:           task.DevctlProvenance,
+		PolicyProvenanceHash:       task.PolicyProvenanceHash,
+		PatchArtifact:              patchArtifact,
+		EvidencePath:               evidencePath,
+		Files:                      files,
+	}, nil
+}
+
+func cloneApprovalEvidence(value ApprovalEvidenceView) ApprovalEvidenceView {
+	clone := value
+	clone.ForbiddenPathClasses = append([]string(nil), value.ForbiddenPathClasses...)
+	clone.Files = append([]ApprovalFileEvidence(nil), value.Files...)
 	return clone
 }
 
@@ -1243,4 +1360,9 @@ func sha256Hex(data []byte) string {
 
 func addEvent(result *Result, eventType, message string) {
 	result.Events = append(result.Events, Event{Sequence: len(result.Events) + 1, Type: eventType, At: time.Now().UTC(), Message: boundedText(message)})
+}
+
+func addRepairEvent(ctx context.Context, result *Result, eventType, message string) {
+	addEvent(result, eventType, message)
+	events.Emit(ctx, events.Event{EventType: events.RepairLifecycle, Status: eventType, Message: boundedText(message)})
 }

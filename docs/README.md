@@ -7,6 +7,8 @@ Start here when continuing work in a new chat:
 3. [Architecture decisions](DECISIONS.md)
 4. [Lesson index](LESSONS.md)
 5. [Stage 7B acceptance record](STAGE_7B_ACCEPTANCE.md)
+6. [Platform context and knowledge boundary](PLATFORM_CONTEXT.md)
+7. [Stage 7D-C repair CLI control and acceptance](STAGE_7D_C_CONTROL.md)
 
 The structured lesson data is in [`../knowledge/lessons.yaml`](../knowledge/lessons.yaml).
 
@@ -19,6 +21,10 @@ Daily operations:
 - `scripts/devctl-startup.ps1 -OpenWorkspace` is the Windows startup entry point.
 - `scripts/devctl-recovery.ps1 -ProjectPath <path>` records a project manually after startup recovery.
 - `devctl handoff <evidence>\\report.json` produces bounded failure evidence for investigation.
+- `devctl context --json <project>` produces a bounded current-state package for an optional coding agent.
+- `devctl lessons query --json <project>` retrieves relevant successful and failed approaches.
+- `devctl evidence rebuild --json <project>` rebuilds the evidence index without changing historical reports.
+- `devctl cache status --json <project>` inspects advisory cache entries and validity metadata.
 
 Windows setup:
 

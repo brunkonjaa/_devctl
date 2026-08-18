@@ -5,3 +5,4 @@
 devctl.exe
 .devctl/bin/
 .devctl/evidence/
+scripts/__pycache__/

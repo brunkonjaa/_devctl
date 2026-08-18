@@ -42,7 +42,12 @@ The scanner remains `NOT_TESTED` when supported dependency evidence or the scann
 
 `devctl handoff` emits a bounded packet from an existing `report.json`. It contains failed or blocking checks, findings, evidence paths, and provenance without raw logs or project command execution.
 
-## Completed: Stage 7D-B — Minimal controlled repair orchestration implementation
+## Current: Stage 7D-C and platform context — implementation complete, visible acceptance partial
+
+- The controlled repair CLI is wired as a thin adapter over `internal/repair.Run`.
+- `context`, `status`, `history`, `lessons`, `cache` and `evidence` provide stable local JSON/text seams for AI agents and developers.
+- Lessons are persisted as bounded structured records, cache entries carry fingerprints, and evidence indexes are rebuildable.
+- Fresh visible Windows TTY evidence passes the ordinary approval matrix and Ctrl+C before application. Post-mutation Ctrl+C timing and fault-injection rows remain explicitly `NOT_TESTED`; the deterministic repair tests cover those rollback seams. Deterministic verification-cache reuse remains later work.
 
 Stage 7 is a multi-project platform milestone. The core must work for `_devctl`, HearthLink and Smart Schedule without putting project-specific rules into the workflow controller.
 
@@ -78,7 +83,17 @@ Stage 7 is a multi-project platform milestone. The core must work for `_devctl`,
 - Implement one bounded repair attempt in `internal/repair`.
 - Use the synthetic Go fixture only.
 - Keep proposal, approval, and deterministic verification as explicit seams.
+- Post-modification cancellation now rolls back and proves the exact baseline
+  before returning `CANCELLED`; provider context and engine-owned approval
+  evidence are exposed for the next human-facing boundary.
 - Test the positive lifecycle and negative matrix before adding a real worker transport or CLI.
+
+### Stage 7D-C — Human-facing controlled repair CLI — IMPLEMENTED / WINDOWS VISIBLE ACCEPTANCE PARTIAL
+
+- Define the terminal presentation and approval boundary above `internal/repair.Run`.
+- Preserve exact patch approval, fail-closed behavior, evidence, and one-attempt limits from Stage 7D-B.
+- Keep the proposal provider controlled and do not connect an external AI transport.
+- The production CLI and local context/knowledge/cache/evidence slices are implemented. Visible Windows evidence passes the ordinary terminal matrix and Ctrl+C before application. The remaining process rows are timing-sensitive Ctrl+C after mutation, rollback-failure process mapping, and selected final WARN/FAIL/ERROR fixtures; package-level fault-injection evidence is recorded separately.
 
 Hard exclusions for Stage 7 are automatic commits, pushes, merges, AI-created shell commands, AI changes to policy thresholds, test disabling and unbounded repair loops.
 

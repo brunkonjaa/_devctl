@@ -3,14 +3,17 @@ package verify
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"devctl/internal/adapters"
 	"devctl/internal/discovery"
 	"devctl/internal/events"
 	"devctl/internal/evidence"
+	"devctl/internal/gitstate"
 	"devctl/internal/model"
 	"devctl/internal/policy"
+	"devctl/internal/runner"
 	"devctl/internal/scheduler"
 	"devctl/internal/version"
 )
@@ -86,6 +89,19 @@ func ProjectWithOptions(ctx context.Context, path string, options Options) (repo
 	}
 	report.Checks = append(report.Checks, scheduler.Run(ctx, plan, 4)...)
 	policy.Apply(&report, config)
+	commitResult, _ := runner.Run(ctx, project.Path, runner.GitCommit)
+	statusResult, _ := runner.Run(ctx, project.Path, runner.GitStatus)
+	report.RepositoryRevision = strings.TrimSpace(commitResult.Output)
+	for _, line := range strings.Split(statusResult.Output, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "##") {
+			report.RepositoryDirty = true
+			break
+		}
+	}
+	if fingerprint, fingerprintErr := gitstate.Fingerprint(project.Path); fingerprintErr == nil {
+		report.RepositoryFingerprint = fingerprint
+	}
 	report.Overall = overall(report.Checks)
 	report.FinishedAt = time.Now().UTC()
 	return report

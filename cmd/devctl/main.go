@@ -50,6 +50,20 @@ func main() {
 		exitCode = sessionCommand(os.Args[2:])
 	case "handoff":
 		exitCode = handoffCommand(os.Args[2:])
+	case "repair":
+		exitCode = repairCommand(os.Args[2:])
+	case "context":
+		exitCode = contextCommand(os.Args[2:])
+	case "status":
+		exitCode = statusCommand(os.Args[2:])
+	case "evidence":
+		exitCode = evidenceCommand(os.Args[2:])
+	case "history":
+		exitCode = historyCommand(os.Args[2:])
+	case "lessons":
+		exitCode = lessonsCommand(os.Args[2:])
+	case "cache":
+		exitCode = cacheCommand(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		usage()
@@ -370,4 +384,10 @@ func usage() {
 	fmt.Printf("       %s worker verify [--live] --request <request.json>\n", program)
 	fmt.Printf("       %s session record|status|resume ...\n", program)
 	fmt.Printf("       %s handoff [--json] <report.json>\n", program)
+	fmt.Printf("       %s repair [--json] [--verbose] [--proposal <proposal.json>] [--allow <path,...>] <project>\n", program)
+	fmt.Printf("       %s context|status [--json] [project]\n", program)
+	fmt.Printf("       %s evidence rebuild|latest [--json] <project>\n", program)
+	fmt.Printf("       %s history [--json] <project>\n", program)
+	fmt.Printf("       %s lessons query|add [--json] <project>\n", program)
+	fmt.Printf("       %s cache status|inspect|clear [--json] <project>\n", program)
 }
