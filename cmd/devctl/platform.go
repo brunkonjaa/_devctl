@@ -63,13 +63,12 @@ func contextLike(args []string, status bool) int {
 
 func evidenceCommand(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "evidence requires rebuild or latest")
+		fmt.Fprintln(os.Stderr, "evidence requires rebuild, latest, or a run and failure ID")
 		return exitInternal
 	}
 	action := args[0]
 	if action != "rebuild" && action != "latest" {
-		fmt.Fprintln(os.Stderr, "evidence requires rebuild or latest")
-		return exitInternal
+		return progressiveEvidenceCommand(args)
 	}
 	flags := flag.NewFlagSet("evidence", flag.ContinueOnError)
 	jsonOutput := flags.Bool("json", false, "emit JSON")

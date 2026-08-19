@@ -27,7 +27,10 @@ type CheckSpec struct {
 	Requires  []string
 	Resources []string
 	Timeout   TimeoutPolicy
-	Run       CheckFunc
+	// DeferFinish allows policy-aware checks to publish their evidence first.
+	// The verifier emits the final check_finished event after policy evaluation.
+	DeferFinish bool
+	Run         CheckFunc
 }
 
 type Plan struct {
@@ -241,7 +244,11 @@ func runOne(ctx context.Context, spec CheckSpec) model.CheckResult {
 		result.Summary = "check cancelled"
 		result.Reason = "scheduler context was cancelled while the check was running"
 	}
-	events.Emit(checkContext, events.Event{EventType: events.CheckFinished, Status: string(result.Status), ElapsedMS: result.DurationMS, Message: result.Summary})
+	if spec.DeferFinish {
+		events.Emit(checkContext, events.Event{EventType: events.CheckEvidence, Status: "INFO", ElapsedMS: result.DurationMS, Message: result.Summary})
+	} else {
+		events.Emit(checkContext, events.Event{EventType: events.CheckFinished, Status: string(result.Status), ElapsedMS: result.DurationMS, Message: result.Summary})
+	}
 	return result
 }
 

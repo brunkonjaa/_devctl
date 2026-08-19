@@ -298,3 +298,185 @@ lessons:
       - evidence
       - cache
       - release
+
+  - id: LESSON-0015
+    title: Shared build caches require scheduler resource locks
+    area: verification-concurrency
+    problem: >-
+      Independent test, race and build checks can contend for one toolchain
+      cache until a healthy check reaches its inactivity timeout.
+    root_cause: >-
+      The scheduler treated commands as independent even though the Go
+      toolchain shared compilation work and cache locks between them.
+    correction: >-
+      Put toolchain-heavy checks behind one named scheduler resource and run
+      them serially. Keep the existing hard and inactivity limits so resource
+      contention is fixed without weakening verification policy.
+    regression_coverage: yes
+    applies_to:
+      - scheduler
+      - go
+      - ci
+      - timeouts
+
+  - id: LESSON-0016
+    title: Secret redaction must preserve state across evidence pages
+    area: evidence-safety
+    problem: >-
+      A private-key marker or short secret assignment split exactly at a raw
+      evidence page boundary can avoid a pattern that only sees one chunk.
+    root_cause: >-
+      Redaction treated each bounded page as an independent string and emitted
+      an unfinished trailing line before the next page supplied the rest.
+    correction: >-
+      Carry the current-line prefix and private-key state into the next page,
+      detect markers against the combined line, and redact both continued and
+      unfinished lines while keeping raw-byte offsets unchanged.
+    regression_coverage: yes
+    applies_to:
+      - evidence
+      - redaction
+      - pagination
+      - security
+
+  - id: LESSON-0017
+    title: Last-mile response truncation must update returned counts
+    area: protocol-bounds
+    problem: >-
+      A response can remove evidence references to meet its byte limit while
+      still reporting the pre-truncation returned count.
+    root_cause: >-
+      Collection counts were calculated before serialization, but the hard
+      encoder performed a second deterministic truncation pass afterward.
+    correction: >-
+      Update every returned count in the same branch that removes an item,
+      preserve the original total, and test the serialized object rather than
+      only the pre-encoding structure.
+    regression_coverage: yes
+    applies_to:
+      - agent-protocol
+      - evidence
+      - pagination
+      - serialization
+
+  - id: LESSON-0018
+    title: Verified fix status comes from evidence, not candidate prose
+    area: knowledge-trust
+    problem: >-
+      A useful repair explanation can be mistaken for proof that one exact
+      failure was closed in the current project state.
+    root_cause: >-
+      Descriptive author input and deterministic verification fields were
+      treated as if they had the same authority.
+    correction: >-
+      Let the author provide only bounded diagnosis and repair text. Derive
+      VERIFIED, project and check provenance, exact report hashes, run order,
+      timestamps and the current fingerprint match from generated evidence.
+    regression_coverage: yes
+    applies_to:
+      - fix-records
+      - evidence
+      - provenance
+      - knowledge
+
+  - id: LESSON-0019
+    title: Correct knowledge by supersession instead of rewriting history
+    area: knowledge-integrity
+    problem: >-
+      Updating a stored fix in place removes the original evidence trail and
+      makes later retrieval unable to distinguish history from correction.
+    root_cause: >-
+      Knowledge records were treated as editable current state rather than an
+      append-only engineering history.
+    correction: >-
+      Create every verified fix as a separate create-only file. Reject duplicate
+      IDs, preserve the original bytes, express correction through a new
+      superseding record, and block reads or appends when stored integrity fails.
+    regression_coverage: yes
+    applies_to:
+      - fix-records
+      - append-only-storage
+      - supersession
+      - auditability
+
+  - id: LESSON-0020
+    title: Strict control JSON must reject ambiguous object structure
+    area: protocol-validation
+    problem: >-
+      Unknown fields, duplicate keys or a second JSON value can make the author
+      and decoder disagree about which control input was accepted.
+    root_cause: >-
+      Ordinary JSON decoding accepted structurally ambiguous input before the
+      deterministic boundary validated its meaning.
+    correction: >-
+      Bound the bytes first, reject duplicate keys at every object depth,
+      disallow unknown fields, require exactly one JSON value, and then validate
+      all identifiers, text and collection limits before any state is written.
+    regression_coverage: yes
+    applies_to:
+      - fix-records
+      - evidence
+      - json
+      - protocol-boundaries
+
+  - id: LESSON-0021
+    title: Deterministic validators need an explicit field order
+    area: deterministic-behavior
+    problem: >-
+      The same invalid object can report a different first error across runs
+      when validation ranges over a Go map of field names and values.
+    root_cause: >-
+      Go map iteration order is deliberately unspecified, but the validator
+      used that order to choose externally visible failure output.
+    correction: >-
+      Validate named fields through an ordered slice, sort dynamic map keys
+      before checking them, and assert the first returned error repeatedly in
+      regression tests.
+    regression_coverage: yes
+    applies_to:
+      - validation
+      - go
+      - cli-errors
+      - deterministic-output
+
+  - id: LESSON-0022
+    title: Secret tests must not become repository secret findings
+    area: test-fixtures
+    problem: >-
+      A negative validation test embedded one complete token-shaped value in
+      source, so the repository's own deterministic secret scan correctly
+      failed in the clean acceptance snapshot.
+    root_cause: >-
+      The fixture tested secret rejection but ignored the separate source-scan
+      boundary that inspects the test file itself.
+    correction: >-
+      Construct scanner-shaped values from harmless fragments at runtime. Keep
+      the negative behavior test while ensuring no complete secret-like literal
+      exists in repository bytes, and prove it through the clean secret scan.
+    regression_coverage: yes
+    applies_to:
+      - tests
+      - secret-scanning
+      - fixtures
+      - clean-ci
+
+  - id: LESSON-0023
+    title: Preserve raw protocol bytes during Windows CLI acceptance
+    area: acceptance-harness
+    problem: >-
+      Redirecting a JSON-producing process through Windows PowerShell converted
+      UTF-8 stdout into UTF-16, so a byte-level validator correctly rejected
+      the result even though the process had emitted valid JSON.
+    root_cause: >-
+      Shell pipeline redirection was treated as byte-preserving when it was a
+      text-decoding and re-encoding boundary.
+    correction: >-
+      Use process-level stdout and stderr file redirection for byte-exact CLI
+      protocols, then validate encoding, trailing newline, stderr separation
+      and the declared response byte count from the raw files.
+    regression_coverage: yes
+    applies_to:
+      - windows
+      - powershell
+      - cli
+      - json-protocols

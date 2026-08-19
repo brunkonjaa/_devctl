@@ -58,3 +58,24 @@ func TestGoTestCannotBeSuppressedByInheritedGoFlags(t *testing.T) {
 		t.Fatalf("expected inherited GOFLAGS to be neutralized, got %#v", check)
 	}
 }
+
+func TestGoToolchainChecksShareExclusiveResource(t *testing.T) {
+	checks := Checks(model.Project{Path: t.TempDir()})
+	want := map[string]bool{
+		"go-test":      true,
+		"go-test-race": true,
+		"go-build":     true,
+	}
+	for _, check := range checks {
+		if !want[check.ID] {
+			continue
+		}
+		if len(check.Resources) != 1 || check.Resources[0] != "go-toolchain" {
+			t.Fatalf("expected %s to exclusively use go-toolchain, got %v", check.ID, check.Resources)
+		}
+		delete(want, check.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing Go toolchain checks: %v", want)
+	}
+}

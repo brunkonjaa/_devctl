@@ -19,22 +19,24 @@ import (
 type CommandID string
 
 const (
-	GitStatus         CommandID = "git-status"
-	GitBranch         CommandID = "git-branch"
-	GitCommit         CommandID = "git-commit"
-	JavaVersion       CommandID = "java-version"
-	GradleBuild       CommandID = "gradle-build"
-	GradleUnitTests   CommandID = "gradle-unit-tests"
-	GradleLint        CommandID = "gradle-lint"
-	GradleCoverage    CommandID = "gradle-coverage"
-	OsvScanner        CommandID = "osv-scanner"
-	OsvScannerVersion CommandID = "osv-scanner-version"
-	GoVersion         CommandID = "go-version"
-	GoEnvironment     CommandID = "go-environment"
-	GoRaceEnvironment CommandID = "go-race-environment"
-	GoTest            CommandID = "go-test"
-	GoTestRace        CommandID = "go-test-race"
-	GoBuild           CommandID = "go-build"
+	GitStatus               CommandID = "git-status"
+	GitBranch               CommandID = "git-branch"
+	GitCommit               CommandID = "git-commit"
+	JavaVersion             CommandID = "java-version"
+	GradleBuild             CommandID = "gradle-build"
+	GradleUnitTests         CommandID = "gradle-unit-tests"
+	GradleLint              CommandID = "gradle-lint"
+	GradleCoverage          CommandID = "gradle-coverage"
+	GradleDependencies      CommandID = "gradle-dependencies"
+	GradleDependenciesDebug CommandID = "gradle-dependencies-debug"
+	OsvScanner              CommandID = "osv-scanner"
+	OsvScannerVersion       CommandID = "osv-scanner-version"
+	GoVersion               CommandID = "go-version"
+	GoEnvironment           CommandID = "go-environment"
+	GoRaceEnvironment       CommandID = "go-race-environment"
+	GoTest                  CommandID = "go-test"
+	GoTestRace              CommandID = "go-test-race"
+	GoBuild                 CommandID = "go-build"
 )
 
 type Spec struct {
@@ -50,22 +52,24 @@ type TimeoutPolicy struct {
 }
 
 var allowed = map[CommandID]Spec{
-	GitStatus:         {ID: GitStatus, Program: "git", Args: []string{"status", "--short", "--branch"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GitBranch:         {ID: GitBranch, Program: "git", Args: []string{"branch", "--show-current"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GitCommit:         {ID: GitCommit, Program: "git", Args: []string{"rev-parse", "HEAD"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	JavaVersion:       {ID: JavaVersion, Program: "java", Args: []string{"-version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GradleBuild:       gradleSpec(GradleBuild, "assembleDebug", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleUnitTests:   gradleSpec(GradleUnitTests, "test", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleLint:        gradleSpec(GradleLint, "lint", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	GradleCoverage:    gradleSpec(GradleCoverage, "jacocoTestReport", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
-	OsvScanner:        {ID: OsvScanner, Program: "osv-scanner", Args: []string{"scan", "source", "--recursive", "--format=json", "."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
-	OsvScannerVersion: {ID: OsvScannerVersion, Program: "osv-scanner", Args: []string{"--version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoVersion:         {ID: GoVersion, Program: "go", Args: []string{"version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoEnvironment:     {ID: GoEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoRaceEnvironment: {ID: GoRaceEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED", "CC"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
-	GoTest:            {ID: GoTest, Program: "go", Args: []string{"test", "-count=1", "./..."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
-	GoTestRace:        {ID: GoTestRace, Program: "go", Args: []string{"test", "-race", "-count=1", "./..."}, Timeout: TimeoutPolicy{Hard: 20 * time.Minute, Inactivity: 3 * time.Minute}},
-	GoBuild:           {ID: GoBuild, Program: "go", Args: []string{"build", "./..."}, Timeout: TimeoutPolicy{Hard: 5 * time.Minute, Inactivity: 3 * time.Minute}},
+	GitStatus:               {ID: GitStatus, Program: "git", Args: []string{"status", "--short", "--branch"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitBranch:               {ID: GitBranch, Program: "git", Args: []string{"branch", "--show-current"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GitCommit:               {ID: GitCommit, Program: "git", Args: []string{"rev-parse", "HEAD"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	JavaVersion:             {ID: JavaVersion, Program: "java", Args: []string{"-version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GradleBuild:             gradleSpec(GradleBuild, "assembleDebug", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleUnitTests:         gradleSpec(GradleUnitTests, "test", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleLint:              gradleSpec(GradleLint, "lint", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleCoverage:          gradleSpec(GradleCoverage, "jacocoTestReport", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute}),
+	GradleDependencies:      gradleDependencySpec(GradleDependencies, "releaseRuntimeClasspath"),
+	GradleDependenciesDebug: gradleDependencySpec(GradleDependenciesDebug, "debugRuntimeClasspath"),
+	OsvScanner:              {ID: OsvScanner, Program: "osv-scanner", Args: []string{"scan", "source", "--recursive", "--format=json", "."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
+	OsvScannerVersion:       {ID: OsvScannerVersion, Program: "osv-scanner", Args: []string{"--version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoVersion:               {ID: GoVersion, Program: "go", Args: []string{"version"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoEnvironment:           {ID: GoEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoRaceEnvironment:       {ID: GoRaceEnvironment, Program: "go", Args: []string{"env", "GOOS", "GOARCH", "CGO_ENABLED", "CC"}, Timeout: TimeoutPolicy{Hard: 30 * time.Second, Inactivity: 30 * time.Second}},
+	GoTest:                  {ID: GoTest, Program: "go", Args: []string{"test", "-count=1", "./..."}, Timeout: TimeoutPolicy{Hard: 15 * time.Minute, Inactivity: 3 * time.Minute}},
+	GoTestRace:              {ID: GoTestRace, Program: "go", Args: []string{"test", "-race", "-count=1", "./..."}, Timeout: TimeoutPolicy{Hard: 20 * time.Minute, Inactivity: 3 * time.Minute}},
+	GoBuild:                 {ID: GoBuild, Program: "go", Args: []string{"build", "./..."}, Timeout: TimeoutPolicy{Hard: 5 * time.Minute, Inactivity: 3 * time.Minute}},
 }
 
 func gradleSpec(id CommandID, task string, timeout TimeoutPolicy) Spec {
@@ -75,8 +79,15 @@ func gradleSpec(id CommandID, task string, timeout TimeoutPolicy) Spec {
 	return Spec{ID: id, Program: "./gradlew", Args: []string{task}, Timeout: timeout}
 }
 
+func gradleDependencySpec(id CommandID, configuration string) Spec {
+	spec := gradleSpec(id, ":app:dependencies", TimeoutPolicy{Hard: 35 * time.Minute, Inactivity: 3 * time.Minute})
+	spec.Args = append(spec.Args, "--configuration", configuration, "--console=plain")
+	return spec
+}
+
 type Result struct {
 	Output             string
+	OutputBytes        int64
 	OutputTruncated    bool
 	ExitCode           int
 	Started            bool
@@ -86,6 +97,38 @@ type Result struct {
 	EnvironmentProfile string
 	EnvironmentKeys    []string
 	EnvironmentValues  map[string]string
+}
+
+type OutputMetricSnapshot struct {
+	RawBytes      int64
+	RetainedBytes int64
+	Truncated     bool
+}
+
+type OutputMetrics struct {
+	rawBytes      atomic.Int64
+	retainedBytes atomic.Int64
+	truncated     atomic.Bool
+}
+
+func (metrics *OutputMetrics) Snapshot() OutputMetricSnapshot {
+	if metrics == nil {
+		return OutputMetricSnapshot{}
+	}
+	return OutputMetricSnapshot{
+		RawBytes:      metrics.rawBytes.Load(),
+		RetainedBytes: metrics.retainedBytes.Load(),
+		Truncated:     metrics.truncated.Load(),
+	}
+}
+
+type outputMetricsContextKey struct{}
+
+func WithOutputMetrics(ctx context.Context, metrics *OutputMetrics) context.Context {
+	if metrics == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, outputMetricsContextKey{}, metrics)
 }
 
 type Compiler struct {
@@ -166,6 +209,16 @@ func RunWithOptions(ctx context.Context, projectPath string, id CommandID, timeo
 	return runSpec(ctx, projectPath, spec, timeout, environment, environmentProfile, environmentValues, "")
 }
 
+// RunGradleDependencyGraph prefers the release runtime graph and falls back
+// to the debug runtime graph for Android projects that do not define release.
+func RunGradleDependencyGraph(ctx context.Context, projectPath string) (Result, error) {
+	result, err := Run(ctx, projectPath, GradleDependencies)
+	if err == nil {
+		return result, nil
+	}
+	return Run(ctx, projectPath, GradleDependenciesDebug)
+}
+
 func runSpec(ctx context.Context, projectPath string, spec Spec, timeout TimeoutPolicy, environment []string, environmentProfile string, environmentValues map[string]string, resolvedExecutable string) (Result, error) {
 	abs, err := filepath.Abs(projectPath)
 	if err != nil {
@@ -239,7 +292,9 @@ func runSpec(ctx context.Context, projectPath string, spec Spec, timeout Timeout
 
 finished:
 	result.Output = output.String()
+	result.OutputBytes = output.TotalBytes()
 	result.OutputTruncated = output.Truncated()
+	recordOutputMetrics(ctx, result.OutputBytes, int64(len(result.Output)), result.OutputTruncated)
 	result.TerminationReason = termination
 	if command.ProcessState != nil {
 		result.ExitCode = command.ProcessState.ExitCode()
@@ -406,11 +461,13 @@ type boundedOutput struct {
 	mu           sync.Mutex
 	data         []byte
 	limit        int
+	totalBytes   int64
 	truncated    bool
 	lastActivity atomic.Int64
 }
 
 func (output *boundedOutput) write(data []byte) (int, error) {
+	output.totalBytes += int64(len(data))
 	if output.limit <= len(output.data) {
 		output.truncated = true
 		return len(data), nil
@@ -425,6 +482,12 @@ func (output *boundedOutput) write(data []byte) (int, error) {
 	return len(data), nil
 }
 
+func (output *boundedOutput) TotalBytes() int64 {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.totalBytes
+}
+
 func (output *boundedOutput) String() string {
 	output.mu.Lock()
 	defer output.mu.Unlock()
@@ -435,6 +498,18 @@ func (output *boundedOutput) Truncated() bool {
 	output.mu.Lock()
 	defer output.mu.Unlock()
 	return output.truncated
+}
+
+func recordOutputMetrics(ctx context.Context, rawBytes, retainedBytes int64, truncated bool) {
+	metrics, ok := ctx.Value(outputMetricsContextKey{}).(*OutputMetrics)
+	if !ok || metrics == nil {
+		return
+	}
+	metrics.rawBytes.Add(rawBytes)
+	metrics.retainedBytes.Add(retainedBytes)
+	if truncated {
+		metrics.truncated.Store(true)
+	}
 }
 
 func prepareCommand(command *exec.Cmd) {

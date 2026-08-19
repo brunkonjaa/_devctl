@@ -33,13 +33,28 @@ jobs:
       - name: Bootstrap devctl
         run: go build -ldflags "-X devctl/internal/version.Commit=${{ github.sha }}" -o devctl ./cmd/devctl
 
-      - name: Verify repository
-        run: ./devctl verify .
+      - name: Verify repository through the agent boundary
+        shell: bash
+        run: |
+          result_path="${RUNNER_TEMP}/devctl-agent-result.json"
+          stderr_path="${RUNNER_TEMP}/devctl-agent-stderr.log"
+          set +e
+          ./devctl verify --agent . >"${result_path}" 2>"${stderr_path}"
+          verify_exit=$?
+          set -e
+          python3 scripts/validate-agent-result.py \
+            --result "${result_path}" \
+            --stderr "${stderr_path}" \
+            --commit "${GITHUB_SHA}"
+          test "${verify_exit}" -eq 0
 
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: devctl-evidence-${{ github.run_id }}
-          path: .devctl/evidence/
+          path: |
+            .devctl/evidence/
+            ${{ runner.temp }}/devctl-agent-result.json
+            ${{ runner.temp }}/devctl-agent-stderr.log
           if-no-files-found: error

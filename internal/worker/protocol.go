@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -16,6 +17,10 @@ import (
 )
 
 const ProtocolVersion = "1"
+const AgentResultSchemaVersion = "1"
+
+// MaxAgentResultBytes includes the terminating newline written to stdout.
+const MaxAgentResultBytes = 16 * 1024
 
 const (
 	maxRequestBytes     = 64 * 1024
@@ -35,32 +40,54 @@ type Request struct {
 }
 
 type Result struct {
-	SchemaVersion string               `json:"schema_version"`
-	RequestID     string               `json:"request_id,omitempty"`
-	Operation     string               `json:"operation,omitempty"`
-	Accepted      bool                 `json:"accepted"`
-	ExitCode      int                  `json:"exit_code"`
-	StartedAt     time.Time            `json:"started_at"`
-	FinishedAt    time.Time            `json:"finished_at"`
-	ProjectID     string               `json:"project_id,omitempty"`
-	RunID         string               `json:"run_id,omitempty"`
-	Overall       model.Status         `json:"overall,omitempty"`
-	EvidencePath  string               `json:"evidence_path,omitempty"`
-	DevctlVersion string               `json:"devctl_version,omitempty"`
-	DevctlCommit  string               `json:"devctl_commit,omitempty"`
-	DevctlDirty   bool                 `json:"devctl_dirty,omitempty"`
-	Checks        []CheckSummary       `json:"checks,omitempty"`
-	FailurePacket *model.FailurePacket `json:"failure_packet,omitempty"`
-	Error         *ProtocolError       `json:"error,omitempty"`
+	SchemaVersion         string               `json:"schema_version"`
+	RequestID             string               `json:"request_id,omitempty"`
+	Operation             string               `json:"operation,omitempty"`
+	VerificationClass     string               `json:"verification_class,omitempty"`
+	Accepted              bool                 `json:"accepted"`
+	ExitCode              int                  `json:"exit_code"`
+	StartedAt             time.Time            `json:"started_at"`
+	FinishedAt            time.Time            `json:"finished_at"`
+	ProjectID             string               `json:"project_id,omitempty"`
+	RunID                 string               `json:"run_id,omitempty"`
+	Overall               model.Status         `json:"overall,omitempty"`
+	EvidencePath          string               `json:"evidence_path,omitempty"`
+	DevctlVersion         string               `json:"devctl_version,omitempty"`
+	DevctlCommit          string               `json:"devctl_commit,omitempty"`
+	DevctlDirty           bool                 `json:"devctl_dirty,omitempty"`
+	PolicyVersion         string               `json:"policy_version,omitempty"`
+	RepositoryRevision    string               `json:"repository_revision,omitempty"`
+	RepositoryDirty       bool                 `json:"repository_dirty,omitempty"`
+	RepositoryFingerprint string               `json:"repository_fingerprint,omitempty"`
+	ChecksTotal           int                  `json:"checks_total,omitempty"`
+	ChecksReturned        int                  `json:"checks_returned,omitempty"`
+	FailuresTotal         int                  `json:"failures_total,omitempty"`
+	FailuresReturned      int                  `json:"failures_returned,omitempty"`
+	Truncated             bool                 `json:"truncated,omitempty"`
+	Next                  string               `json:"next,omitempty"`
+	InformationFlow       *InformationFlow     `json:"information_flow,omitempty"`
+	Checks                []CheckSummary       `json:"checks,omitempty"`
+	FailurePacket         *model.FailurePacket `json:"failure_packet,omitempty"`
+	Error                 *ProtocolError       `json:"error,omitempty"`
 }
 
 type CheckSummary struct {
-	ID         string       `json:"check_id"`
-	Status     model.Status `json:"status"`
-	Blocking   bool         `json:"blocking,omitempty"`
-	Summary    string       `json:"summary"`
-	Reason     string       `json:"reason,omitempty"`
-	DurationMS int64        `json:"duration_ms"`
+	ID           string       `json:"check_id"`
+	CheckVersion string       `json:"check_version,omitempty"`
+	Status       model.Status `json:"status"`
+	Blocking     bool         `json:"blocking,omitempty"`
+	Summary      string       `json:"summary"`
+	Reason       string       `json:"reason,omitempty"`
+	DurationMS   int64        `json:"duration_ms"`
+}
+
+type InformationFlow struct {
+	RawSubprocessBytes      int64 `json:"raw_subprocess_bytes"`
+	RetainedSubprocessBytes int64 `json:"retained_subprocess_bytes"`
+	LocalEvidenceBytes      int64 `json:"local_evidence_bytes"`
+	LocalEvidenceMeasured   bool  `json:"local_evidence_measured"`
+	AgentResponseBytes      int64 `json:"agent_response_bytes"`
+	OutputTruncated         bool  `json:"output_truncated"`
 }
 
 type ProtocolError struct {
@@ -135,21 +162,63 @@ func validateIdentifier(value, name string) error {
 }
 
 func NewVerificationResult(request Request, report model.Report, exitCode int, startedAt, finishedAt time.Time) Result {
+	result := newVerificationResult(report, exitCode, startedAt, finishedAt, nil)
+	result.RequestID = boundedText(request.RequestID)
+	result.Operation = boundedText(request.Operation)
+	result.ProjectID = boundedText(request.ProjectID)
+	return result
+}
+
+func NewAgentVerificationResult(report model.Report, exitCode int, startedAt, finishedAt time.Time, informationFlow InformationFlow) Result {
+	result := newVerificationResult(report, exitCode, startedAt, finishedAt, &informationFlow)
+	result.SchemaVersion = AgentResultSchemaVersion
+	result.Operation = "verify"
+	result.VerificationClass = "local-full"
+	result.PolicyVersion = boundedText(report.PolicyVersion)
+	result.RepositoryRevision = boundedText(report.RepositoryRevision)
+	result.RepositoryDirty = report.RepositoryDirty
+	result.RepositoryFingerprint = boundedText(report.RepositoryFingerprint)
+	result.ChecksTotal = len(report.Checks)
+	result.ChecksReturned = len(result.Checks)
+	for index := range result.Checks {
+		if index < len(report.Checks) {
+			result.Checks[index].CheckVersion = boundedText(report.Checks[index].CheckVersion)
+		}
+	}
+	if result.ChecksReturned < result.ChecksTotal {
+		result.Truncated = true
+	}
+	packet := handoff.FromReport(report)
+	result.FailuresTotal = len(packet.Failures)
+	if result.FailurePacket != nil {
+		result.FailuresReturned = len(result.FailurePacket.Failures)
+	}
+	if result.FailuresReturned < result.FailuresTotal {
+		result.Truncated = true
+	}
+	if result.Truncated {
+		result.Next = "request bounded failure details from local evidence"
+	}
+	if report.Project != nil {
+		result.ProjectID = boundedText(report.Project.Identity)
+	}
+	return result
+}
+
+func newVerificationResult(report model.Report, exitCode int, startedAt, finishedAt time.Time, informationFlow *InformationFlow) Result {
 	result := Result{
-		SchemaVersion: ProtocolVersion,
-		RequestID:     boundedText(request.RequestID),
-		Operation:     boundedText(request.Operation),
-		Accepted:      true,
-		ExitCode:      exitCode,
-		StartedAt:     startedAt,
-		FinishedAt:    finishedAt,
-		ProjectID:     boundedText(request.ProjectID),
-		RunID:         boundedText(report.RunID),
-		Overall:       report.Overall,
-		EvidencePath:  boundedText(report.EvidencePath),
-		DevctlVersion: boundedText(report.DevctlVersion),
-		DevctlCommit:  boundedText(report.DevctlCommit),
-		DevctlDirty:   report.DevctlDirty,
+		SchemaVersion:   ProtocolVersion,
+		Accepted:        true,
+		ExitCode:        exitCode,
+		StartedAt:       startedAt,
+		FinishedAt:      finishedAt,
+		RunID:           boundedText(report.RunID),
+		Overall:         report.Overall,
+		EvidencePath:    boundedText(report.EvidencePath),
+		DevctlVersion:   boundedText(report.DevctlVersion),
+		DevctlCommit:    boundedText(report.DevctlCommit),
+		DevctlDirty:     report.DevctlDirty,
+		InformationFlow: informationFlow,
 	}
 	for index, check := range report.Checks {
 		if index >= maxChecks {
@@ -164,15 +233,33 @@ func NewVerificationResult(request Request, report model.Report, exitCode int, s
 			DurationMS: check.DurationMS,
 		})
 	}
-	packet := sanitizeFailurePacket(handoff.FromReport(report))
+	packet := handoff.FromReport(report)
+	packet = sanitizeFailurePacket(packet)
 	if len(packet.Failures) > 0 {
 		result.FailurePacket = &packet
 	}
 	return result
 }
 
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+var awsAccessKeyPattern = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+var privateKeyMarkerPattern = regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`)
+var secretAssignmentPattern = regexp.MustCompile(`(?i)\b(api[_-]?key|secret|password|token)\s*[:=]\s*["']?[A-Za-z0-9/+=_-]{16,}`)
+
 func boundedText(value string) string {
-	runes := []rune(strings.TrimSpace(value))
+	value = ansiEscapePattern.ReplaceAllString(value, "")
+	value = awsAccessKeyPattern.ReplaceAllString(value, "[REDACTED_AWS_ACCESS_KEY]")
+	if privateKeyMarkerPattern.MatchString(value) {
+		return "[REDACTED_PRIVATE_KEY]"
+	}
+	value = secretAssignmentPattern.ReplaceAllString(value, "$1=[REDACTED]")
+	value = strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) {
+			return ' '
+		}
+		return character
+	}, value)
+	runes := []rune(strings.Join(strings.Fields(value), " "))
 	if len(runes) <= maxText {
 		return string(runes)
 	}
@@ -188,6 +275,138 @@ func RejectedResult(requestID, operation, code, message string) Result {
 		ExitCode:      2,
 		Error:         &ProtocolError{Code: boundedText(code), Message: boundedText(message)},
 	}
+}
+
+func RejectedAgentResult(code, message string, startedAt, finishedAt time.Time) Result {
+	informationFlow := InformationFlow{}
+	return Result{
+		SchemaVersion:     AgentResultSchemaVersion,
+		Operation:         "verify",
+		VerificationClass: "local-full",
+		Accepted:          false,
+		ExitCode:          2,
+		StartedAt:         startedAt,
+		FinishedAt:        finishedAt,
+		InformationFlow:   &informationFlow,
+		Error:             &ProtocolError{Code: boundedText(code), Message: boundedText(message)},
+	}
+}
+
+// EncodeResult produces the one bounded JSON object used by agent-facing
+// callers. It never includes raw subprocess output.
+func EncodeResult(result Result) ([]byte, error) {
+	result = sanitizeResult(result)
+	encoded, err := encodeWithResponseSize(result)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) <= MaxAgentResultBytes {
+		return encoded, nil
+	}
+
+	result.Truncated = true
+	if result.Next == "" {
+		result.Next = "request bounded failure details from local evidence"
+	}
+	for result.FailurePacket != nil && len(result.FailurePacket.Failures) > 0 {
+		result.FailurePacket.Failures = result.FailurePacket.Failures[:len(result.FailurePacket.Failures)-1]
+		result.FailuresReturned = len(result.FailurePacket.Failures)
+		if result.FailuresReturned == 0 {
+			result.FailurePacket = nil
+		}
+		encoded, err = encodeWithResponseSize(result)
+		if err != nil {
+			return nil, err
+		}
+		if len(encoded) <= MaxAgentResultBytes {
+			return encoded, nil
+		}
+	}
+	for index := range result.Checks {
+		result.Checks[index].Summary = ""
+		result.Checks[index].Reason = ""
+	}
+	encoded, err = encodeWithResponseSize(result)
+	if err != nil {
+		return nil, err
+	}
+	for len(encoded) > MaxAgentResultBytes && len(result.Checks) > 0 {
+		result.Checks = result.Checks[:len(result.Checks)-1]
+		result.ChecksReturned = len(result.Checks)
+		encoded, err = encodeWithResponseSize(result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(encoded) > MaxAgentResultBytes {
+		return nil, fmt.Errorf("agent result cannot be represented within %d bytes", MaxAgentResultBytes)
+	}
+	return encoded, nil
+}
+
+func sanitizeResult(result Result) Result {
+	if result.InformationFlow != nil {
+		informationFlow := *result.InformationFlow
+		result.InformationFlow = &informationFlow
+	}
+	result.Checks = append([]CheckSummary(nil), result.Checks...)
+	result.SchemaVersion = boundedText(result.SchemaVersion)
+	result.RequestID = boundedText(result.RequestID)
+	result.Operation = boundedText(result.Operation)
+	result.VerificationClass = boundedText(result.VerificationClass)
+	result.ProjectID = boundedText(result.ProjectID)
+	result.RunID = boundedText(result.RunID)
+	result.EvidencePath = boundedText(result.EvidencePath)
+	result.DevctlVersion = boundedText(result.DevctlVersion)
+	result.DevctlCommit = boundedText(result.DevctlCommit)
+	result.PolicyVersion = boundedText(result.PolicyVersion)
+	result.RepositoryRevision = boundedText(result.RepositoryRevision)
+	result.RepositoryFingerprint = boundedText(result.RepositoryFingerprint)
+	result.Next = boundedText(result.Next)
+	for index := range result.Checks {
+		result.Checks[index].ID = boundedText(result.Checks[index].ID)
+		result.Checks[index].CheckVersion = boundedText(result.Checks[index].CheckVersion)
+		result.Checks[index].Summary = boundedText(result.Checks[index].Summary)
+		result.Checks[index].Reason = boundedText(result.Checks[index].Reason)
+	}
+	if result.FailurePacket != nil {
+		packet := sanitizeFailurePacket(cloneFailurePacket(*result.FailurePacket))
+		result.FailurePacket = &packet
+	}
+	if result.Error != nil {
+		errorValue := *result.Error
+		errorValue.Code = boundedText(errorValue.Code)
+		errorValue.Message = boundedText(errorValue.Message)
+		result.Error = &errorValue
+	}
+	return result
+}
+
+func cloneFailurePacket(packet model.FailurePacket) model.FailurePacket {
+	packet.Failures = append([]model.FailureItem(nil), packet.Failures...)
+	for index := range packet.Failures {
+		packet.Failures[index].EvidencePaths = append([]string(nil), packet.Failures[index].EvidencePaths...)
+		packet.Failures[index].Findings = append([]model.Finding(nil), packet.Failures[index].Findings...)
+	}
+	return packet
+}
+
+func encodeWithResponseSize(result Result) ([]byte, error) {
+	if result.InformationFlow == nil {
+		result.InformationFlow = &InformationFlow{}
+	}
+	for attempts := 0; attempts < 8; attempts++ {
+		data, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		size := int64(len(data) + 1)
+		if result.InformationFlow.AgentResponseBytes == size {
+			return append(data, '\n'), nil
+		}
+		result.InformationFlow.AgentResponseBytes = size
+	}
+	return nil, errors.New("agent response size did not stabilize")
 }
 
 func sanitizeFailurePacket(packet model.FailurePacket) model.FailurePacket {

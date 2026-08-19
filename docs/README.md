@@ -9,13 +9,32 @@ Start here when continuing work in a new chat:
 5. [Stage 7B acceptance record](STAGE_7B_ACCEPTANCE.md)
 6. [Platform context and knowledge boundary](PLATFORM_CONTEXT.md)
 7. [Stage 7D-C repair CLI control and acceptance](STAGE_7D_C_CONTROL.md)
+8. [Stage 7E-A agent verification boundary](STAGE_7E_A_AGENT_VERIFICATION_BOUNDARY.md)
+9. [Stage 7E-B progressive failure and evidence retrieval](STAGE_7E_B_PROGRESSIVE_DISCLOSURE.md)
+10. [Stage 7F-A structured Fix Records](STAGE_7F_A_STRUCTURED_FIX_RECORDS.md)
+11. [Stage 7F-B authoritative knowledge](STAGE_7F_B_AUTHORITATIVE_KNOWLEDGE.md)
+12. [Stage 7F-C deterministic search](STAGE_7F_C_DETERMINISTIC_SEARCH.md)
 
-The structured lesson data is in [`../knowledge/lessons.yaml`](../knowledge/lessons.yaml).
+The older structured lesson index is in [`../knowledge/lessons.yaml`](../knowledge/lessons.yaml).
+Stage 7F-B authoritative lesson files are created under the project-local or
+global `knowledge/authoritative-lessons` directories described in its stage
+document.
+
+Stage 7E-A, 7E-B, 7F-A and local 7F-B/7F-C pass focused, broad and clean
+isolated-checkout acceptance. Hosted GitHub Actions remains `NOT TESTED` until
+these changes are explicitly published and the remote workflow passes. Stage
+7F-C deterministic search is locally accepted; later staleness-aware policy is
+outside this slice.
+IDs and explicit promotion of reviewed Fix Records into reusable lessons.
 
 Daily operations:
 
 - `devctl verify <project>` runs deterministic checks and records session state.
 - `devctl verify --live <project>` renders the same verification events to stderr while checks run.
+- `devctl verify --agent <project>` runs the same full verification while returning one bounded JSON result and keeping child output in local evidence.
+- `devctl failures <run-id> --json --project <project>` returns bounded failed or unresolved check summaries from one existing run.
+- `devctl failure <run-id> <check-id> --json --project <project>` returns one bounded normalized failure without raw output.
+- `devctl evidence <run-id> <failure-id> --json --project <project>` returns one redacted bounded raw-evidence fragment; use its raw-byte `next_offset` for continuation.
 - `devctl worker verify [--live] --request <request.json>` accepts one versioned external-worker verification request and returns a structured result; `--live` renders the same deterministic events to stderr.
 - `devctl session resume` shows the last saved project state.
 - `scripts/devctl-startup.ps1 -OpenWorkspace` is the Windows startup entry point.
@@ -23,6 +42,14 @@ Daily operations:
 - `devctl handoff <evidence>\\report.json` produces bounded failure evidence for investigation.
 - `devctl context --json <project>` produces a bounded current-state package for an optional coding agent.
 - `devctl lessons query --json <project>` retrieves relevant successful and failed approaches.
+- `devctl fixes record --input <candidate.json> <project>` closes one fix only when exact pre/post evidence and the current project fingerprint satisfy the Stage 7F-A rule.
+- `devctl fixes list --json <project>` lists bounded immutable project-local Fix Records without running verification.
+- `devctl fixes show --json <project> <fix-id>` validates and returns one stored Fix Record without changing project state.
+- `devctl knowledge candidate --input <draft.json> <project>` stores a non-trusted lesson candidate.
+- `devctl knowledge review --id <uuid> --reviewer <name> [--approve] <project>` appends a reviewed lifecycle revision.
+- `devctl knowledge promote --id <uuid> --global-root <root> --reviewer <name> --approve <project>` explicitly publishes a sanitized local lesson.
+- `devctl knowledge search [flags] [query]` deterministically searches local and global authoritative lessons.
+- `devctl knowledge show [--global] [<root>] <lesson-id-or-display-id>` reads one current authoritative lesson.
 - `devctl evidence rebuild --json <project>` rebuilds the evidence index without changing historical reports.
 - `devctl cache status --json <project>` inspects advisory cache entries and validity metadata.
 

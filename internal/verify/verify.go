@@ -21,8 +21,9 @@ import (
 const coreCheckVersion = "core-v1"
 
 type Options struct {
-	Sink  events.Sink
-	RunID string
+	Sink          events.Sink
+	RunID         string
+	OutputMetrics *runner.OutputMetrics
 }
 
 func Project(ctx context.Context, path string) (report model.Report) {
@@ -40,6 +41,7 @@ func ProjectWithOptions(ctx context.Context, path string, options Options) (repo
 	if options.Sink != nil {
 		ctx = events.WithSink(ctx, options.Sink)
 	}
+	ctx = runner.WithOutputMetrics(ctx, options.OutputMetrics)
 	ctx = events.WithMetadata(ctx, report.RunID, "")
 	defer func() { finalize(&report, path, ctx) }()
 	project, err := discovery.Detect(path)
@@ -89,8 +91,20 @@ func ProjectWithOptions(ctx context.Context, path string, options Options) (repo
 	}
 	report.Checks = append(report.Checks, scheduler.Run(ctx, plan, 4)...)
 	policy.Apply(&report, config)
-	commitResult, _ := runner.Run(ctx, project.Path, runner.GitCommit)
-	statusResult, _ := runner.Run(ctx, project.Path, runner.GitStatus)
+	for _, spec := range plan.Checks {
+		if !spec.DeferFinish {
+			continue
+		}
+		for _, check := range report.Checks {
+			if check.ID == spec.ID && check.Status != model.Skip {
+				events.Emit(events.WithCheck(ctx, check.ID), events.Event{EventType: events.CheckFinished, Status: string(check.Status), ElapsedMS: check.DurationMS, Message: check.Summary})
+				break
+			}
+		}
+	}
+	provenanceCtx := events.WithCheck(ctx, "provenance")
+	commitResult, _ := runner.Run(provenanceCtx, project.Path, runner.GitCommit)
+	statusResult, _ := runner.Run(provenanceCtx, project.Path, runner.GitStatus)
 	report.RepositoryRevision = strings.TrimSpace(commitResult.Output)
 	for _, line := range strings.Split(statusResult.Output, "\n") {
 		line = strings.TrimSpace(line)

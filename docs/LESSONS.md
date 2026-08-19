@@ -60,6 +60,24 @@ The following rules apply across `_devctl`, not only Stage 7D-C:
   need an explicit cross-platform line-ending policy.
 - `LESSON-0014` — Generated evidence, local cache, source staging and Git
   publication are separate boundaries requiring separate review.
+- `LESSON-0015` — Serialize checks that share a build cache through one named
+  scheduler resource. Do not hide contention by extending verification limits.
+- `LESSON-0016` — Evidence redaction carries line and private-key state across
+  byte pages and never emits an unfinished line before it can be classified.
+- `LESSON-0017` — Hard response encoders update returned counts whenever they
+  remove an item after the initial protocol object was built.
+- `LESSON-0018` — A verified fix status must be derived from exact pre/post
+  evidence and the current repository fingerprint, never accepted from prose.
+- `LESSON-0019` — Knowledge history is append-only: corrections supersede old
+  records, while malformed or edited existing records block further appends.
+- `LESSON-0020` — Structured control input rejects unknown fields, duplicate
+  keys, extra JSON values and unbounded content before it reaches authority.
+- `LESSON-0021` — Deterministic validation checks fields in a fixed order; it
+  never chooses the first reported failure by ranging over a Go map.
+- `LESSON-0022` — Secret-handling tests construct scanner-shaped values at
+  runtime instead of embedding a repository-scannable secret literal.
+- `LESSON-0023` — Byte-exact CLI acceptance uses process-level stdout/stderr
+  files; Windows PowerShell pipeline redirection can transcode protocol bytes.
 
 ## Lesson workflow
 

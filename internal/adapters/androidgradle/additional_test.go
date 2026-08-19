@@ -1,9 +1,11 @@
 package androidgradle
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"devctl/internal/model"
@@ -27,6 +29,38 @@ func TestParseOSVFindingsNormalizesPackageEvidence(t *testing.T) {
 	}
 	if findings[0].Component != "example-library" || findings[0].Version != "1.2.3" || findings[0].Severity != "MEDIUM" {
 		t.Fatalf("unexpected normalized finding: %#v", findings[0])
+	}
+}
+
+func TestParseGradleDependenciesUsesResolvedMavenVersions(t *testing.T) {
+	dependencies := parseGradleDependencies(`releaseRuntimeClasspath - Runtime classpath of source set 'release'.
++--- androidx.activity:activity-compose:1.13.0
++--- androidx.lifecycle:lifecycle-runtime-compose:2.9.4 -> 2.9.5
+\--- com.google.zxing:core:3.5.3`)
+	if len(dependencies) != 3 {
+		t.Fatalf("expected three dependencies, got %#v", dependencies)
+	}
+	if dependencies[1].Name != "androidx.lifecycle:lifecycle-runtime-compose" || dependencies[1].Version != "2.9.5" {
+		t.Fatalf("expected resolved version, got %#v", dependencies[1])
+	}
+}
+
+func TestQueryOSVRejectsIncompleteBatchAndNormalizesFindings(t *testing.T) {
+	previous := osvQueryClient
+	defer func() { osvQueryClient = previous }()
+	osvQueryClient = func(_ context.Context, payload []byte) ([]byte, error) {
+		if !strings.Contains(string(payload), "example:library") {
+			t.Fatalf("query payload did not contain Maven component: %s", payload)
+		}
+		return []byte(`{"results":[{"vulns":[{"id":"OSV-1","summary":"example issue","database_specific":{"severity":"HIGH"}}]}]}`), nil
+	}
+	response, raw, err := queryOSV(context.Background(), []osvQuery{{Package: osvPackage{Name: "example:library", Ecosystem: "Maven"}, Version: "1.2.3"}})
+	if err != nil || raw == "" || len(response.Results) != 1 || len(response.Results[0].Vulnerabilities) != 1 {
+		t.Fatalf("unexpected OSV response: %#v raw=%q err=%v", response, raw, err)
+	}
+	findings := normalizeOSVQueryFindings(model.Project{Name: "Example"}, []gradleDependency{{Name: "example:library", Version: "1.2.3"}}, response)
+	if len(findings) != 1 || findings[0].Severity != "HIGH" || findings[0].Component != "example:library" {
+		t.Fatalf("unexpected normalized finding: %#v", findings)
 	}
 }
 

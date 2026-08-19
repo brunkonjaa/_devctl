@@ -49,6 +49,8 @@ func (renderer *Renderer) Publish(event events.Event) {
 		fmt.Fprintf(renderer.out, "%s  %-9s %-18s %s\n", formatDuration(stamp), event.Status, event.CheckID, event.Message)
 	case events.CheckFinished:
 		fmt.Fprintf(renderer.out, "%s  %-9s %-18s %s\n", formatDuration(stamp), event.Status, event.CheckID, event.Message)
+	case events.CheckEvidence:
+		fmt.Fprintf(renderer.out, "%s  INFO      %-18s %s\n", formatDuration(stamp), event.CheckID, event.Message)
 	case events.EvidenceWritten:
 		fmt.Fprintf(renderer.out, "%s  EVIDENCE  %s\n", formatDuration(stamp), event.Message)
 	case events.VerificationFinished:

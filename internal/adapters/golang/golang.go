@@ -12,7 +12,10 @@ import (
 	"devctl/internal/scheduler"
 )
 
-const checkVersion = "go-pack-v1"
+const (
+	checkVersion        = "go-pack-v1"
+	goToolchainResource = "go-toolchain"
+)
 
 var timeout = scheduler.TimeoutPolicy{Hard: 20 * time.Minute, Inactivity: 3 * time.Minute}
 
@@ -23,15 +26,15 @@ func Checks(project model.Project) []scheduler.CheckSpec {
 			Run: environmentCheck(project),
 		},
 		{
-			ID: "go-test", Version: checkVersion, Requires: []string{"go-environment"}, Timeout: timeout,
+			ID: "go-test", Version: checkVersion, Requires: []string{"go-environment"}, Resources: []string{goToolchainResource}, Timeout: timeout,
 			Run: commandCheck(project, runner.GoTest, "Go tests"),
 		},
 		{
-			ID: "go-test-race", Version: checkVersion, Requires: []string{"go-environment"}, Timeout: timeout,
+			ID: "go-test-race", Version: checkVersion, Requires: []string{"go-environment"}, Resources: []string{goToolchainResource}, Timeout: timeout,
 			Run: raceCheck(project),
 		},
 		{
-			ID: "go-build", Version: checkVersion, Requires: []string{"go-environment"}, Timeout: timeout,
+			ID: "go-build", Version: checkVersion, Requires: []string{"go-environment"}, Resources: []string{goToolchainResource}, Timeout: timeout,
 			Run: buildCheck(project),
 		},
 	}

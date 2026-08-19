@@ -14,6 +14,9 @@ devctl status --json [project]
 devctl evidence rebuild --json <project>
 devctl history --json <project>
 devctl lessons query --json --check <check> <project>
+devctl fixes record --input <candidate.json> <project>
+devctl fixes list --json <project>
+devctl fixes show --json <project> <fix-id>
 devctl cache status --json <project>
 devctl cache inspect --json <project>
 ```
@@ -29,11 +32,33 @@ still matches the project inputs.
 
 ## Knowledge vault
 
-New structured records are stored under the project at
-`.devctl/knowledge/lessons.json`. A record can describe a successful solution
-or a failed attempt. The normalized problem and root cause provide a stable
-deduplication and retrieval key. The older `knowledge/lessons.yaml` remains a
-human-maintained lesson index; it is not executable configuration.
+The older advisory lesson interface stores project-local entries at
+`.devctl/knowledge/lessons.json`. A lesson can describe a generalized
+successful solution or a failed approach, but it is not proof that one exact
+fix closed one exact failure. It remains for compatibility with the 7E
+context boundary and is not Stage 7F-B authority.
+
+Stage 7F-B authoritative project lessons are create-only revisions under
+`.devctl/knowledge/authoritative-lessons`; global lessons use
+`knowledge/authoritative-lessons` under the selected global root. Each lesson
+has a UUID machine ID, a separate display ID, lifecycle state, compatibility
+metadata, source Fix Record IDs and a content hash. A generated
+`.devctl/knowledge/lesson-index.json` or `knowledge/lesson-index.json` is only
+a rebuildable summary. `devctl knowledge review` and `devctl knowledge
+promote` are explicit review boundaries; AI text alone cannot create a
+`VERIFIED` lesson.
+
+Stage 7F-A Fix Records are separate append-only files under
+`.devctl/knowledge/fix-records/<fix-id>.json`. `_devctl` creates one only after
+the exact pre-fix and post-fix reports, target check transitions, project
+identity, provenance and current repository fingerprint satisfy the closure
+rule. Candidate text cannot choose `VERIFIED`. Corrections use a new record
+with `supersedes`; old bytes remain unchanged. `list` and `show` are read-only.
+
+The repository's `knowledge/lessons.yaml` remains a human-maintained reusable
+lesson index and is not executable configuration. Stage 7F-A does not promote
+Fix Records into either lesson store. Semantic search, ranking and
+staleness-aware cross-project retrieval remain Stage 7F-C work.
 
 ## Evidence and cache storage
 
@@ -69,9 +94,12 @@ stderr. `--json` emits one result on stdout.
    agent.
 3. Let the agent inspect only the named files and current evidence references.
 4. Run `devctl verify .` for fresh deterministic evidence.
-5. Record a reusable successful fix or failed approach with `devctl lessons add`.
-6. Rebuild the evidence index when searching history.
-7. Use the controlled repair command only with a clean baseline, explicit
+5. After a material fix has exact pre/post evidence, close its project-local
+   record with `devctl fixes record --input <candidate.json> <project>`.
+6. Generalize a reusable rule separately; do not treat the Fix Record itself
+   as an automatically accepted lesson.
+7. Rebuild the evidence index when searching history.
+8. Use the controlled repair command only with a clean baseline, explicit
    allowlist and interactive approval.
 
 No cloud service or AI account is required for ordinary verification,

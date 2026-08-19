@@ -41,3 +41,43 @@ HearthLink uses `DEVCTL_REPO_TOKEN` to read private `_devctl`. The token should 
 ## Generated evidence is not project source
 
 Project-controlled `.devctl` configuration may remain visible. Generated evidence is ignored specifically through `.devctl/evidence/`.
+
+## Progressive disclosure reads exact generated evidence
+
+Agent retrieval names an exact run ID and reads only under that selected
+project's generated `.devctl/evidence/<run-id>` directory. Failure IDs are the
+run-scoped check IDs in Stage 7E-B. Report-supplied paths are presentation data;
+they are never followed to retrieve raw content.
+
+Level 2 lists unresolved checks, Level 3 returns one normalized failure, and
+Level 4 returns one small redacted fragment from the generated raw check log.
+All JSON responses are versioned and capped at 16 KiB. Paging cursors describe
+failure/finding indexes or raw byte offsets; retrieval never changes the stored
+verification result and exits successfully when it retrieves a historical
+`FAIL`.
+
+## Shared toolchain state is a scheduler resource
+
+`go-test`, `go-test-race`, and `go-build` all declare the same
+`go-toolchain` resource. They may be logically independent, but concurrent
+cold-cache execution can contend long enough to trigger a healthy check's
+inactivity limit. Serialization fixes that resource conflict without extending
+timeouts, changing policy, or hiding an unavailable race toolchain.
+
+## Verified fixes and reusable lessons are different records
+
+A Stage 7F-A Fix Record proves one project-local closure against exact pre-fix
+and post-fix evidence. `_devctl`, not candidate prose, derives `VERIFIED`, check
+transitions, provenance, report hashes, record time and the current-state
+fingerprint match.
+
+A reusable Lesson is a separately reviewed generalization. Recording one fix
+does not automatically claim that its solution applies to another project,
+tool version or repository state. Stage 7F-B will define explicit promotion and
+global identity; Stage 7F-A does not silently write either lesson store.
+
+Fix Records are append-only individual files. An existing ID is never updated.
+A correction creates a new record naming the old ID in `supersedes`, and reads
+or later appends fail closed if existing record integrity is broken. The local
+content hash detects accidental or unapproved edits but is not represented as
+a remote signature against an attacker who controls the project filesystem.

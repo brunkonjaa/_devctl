@@ -16,6 +16,7 @@ const (
 	ProcessOutput        Type = "process_output"
 	ProcessFinished      Type = "process_finished"
 	CheckFinished        Type = "check_finished"
+	CheckEvidence        Type = "check_evidence"
 	EvidenceWritten      Type = "evidence_written"
 	VerificationFinished Type = "verification_finished"
 	RepairLifecycle      Type = "repair_lifecycle"

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +52,10 @@ func main() {
 		exitCode = sessionCommand(os.Args[2:])
 	case "handoff":
 		exitCode = handoffCommand(os.Args[2:])
+	case "failures":
+		exitCode = failuresCommand(os.Args[2:])
+	case "failure":
+		exitCode = failureCommand(os.Args[2:])
 	case "repair":
 		exitCode = repairCommand(os.Args[2:])
 	case "context":
@@ -62,6 +68,10 @@ func main() {
 		exitCode = historyCommand(os.Args[2:])
 	case "lessons":
 		exitCode = lessonsCommand(os.Args[2:])
+	case "knowledge":
+		exitCode = knowledgeCommand(os.Args[2:])
+	case "fixes":
+		exitCode = fixesCommand(os.Args[2:])
 	case "cache":
 		exitCode = cacheCommand(os.Args[2:])
 	default:
@@ -115,11 +125,29 @@ func discoverCommand(args []string) int {
 }
 
 func verifyCommand(args []string) int {
+	startedAt := time.Now().UTC()
+	agentRequested := agentFlagRequested(args)
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	jsonOutput := flags.Bool("json", false, "emit JSON")
 	liveOutput := flags.Bool("live", false, "render live verification events to stderr")
+	agentOutput := flags.Bool("agent", false, "emit one bounded agent result")
+	if agentRequested {
+		flags.SetOutput(io.Discard)
+	}
 	if err := flags.Parse(args); err != nil {
+		if agentRequested {
+			return printAgentError("invalid_arguments", err.Error(), startedAt)
+		}
 		return exitInternal
+	}
+	if *agentOutput {
+		if *liveOutput || *jsonOutput {
+			return printAgentError("invalid_arguments", "--agent cannot be combined with --live or --json", startedAt)
+		}
+		if flags.NArg() != 1 {
+			return printAgentError("invalid_arguments", "verify --agent requires one project path", startedAt)
+		}
+		return verifyAgent(flags.Arg(0), startedAt)
 	}
 	if flags.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "verify requires one project path")
@@ -128,6 +156,7 @@ func verifyCommand(args []string) int {
 	projectPath := flags.Arg(0)
 	report, exitCode, executionErr := executeVerification(projectPath, *liveOutput)
 	if executionErr != nil {
+		fmt.Fprintln(os.Stderr, executionErr)
 		return exitCode
 	}
 	_ = recordVerificationSession(report, projectPath)
@@ -198,25 +227,50 @@ func workerCommand(args []string) int {
 }
 
 func executeVerification(projectPath string, liveOutput bool, expectedProjectIDs ...string) (model.Report, int, error) {
+	return executeVerificationWithOptions(projectPath, verificationExecutionOptions{
+		LiveOutput:         liveOutput,
+		ExpectedProjectIDs: expectedProjectIDs,
+		Diagnostics:        os.Stderr,
+	})
+}
+
+type verificationExecutionOptions struct {
+	LiveOutput         bool
+	ExpectedProjectIDs []string
+	Diagnostics        io.Writer
+	OutputMetrics      *runner.OutputMetrics
+}
+
+func executeVerificationWithOptions(projectPath string, options verificationExecutionOptions) (model.Report, int, error) {
+	diagnostics := options.Diagnostics
+	if diagnostics == nil {
+		diagnostics = io.Discard
+	}
 	projectEntry, registryDetectErr := registry.DetectProject(projectPath)
-	if len(expectedProjectIDs) > 0 {
+	if registryDetectErr != nil {
+		info, statErr := os.Stat(projectPath)
+		if statErr != nil || !info.IsDir() {
+			return model.Report{}, exitInternal, fmt.Errorf("project path is unavailable: %s: %w", projectPath, registryDetectErr)
+		}
+	}
+	if len(options.ExpectedProjectIDs) > 0 {
 		if registryDetectErr != nil {
 			return model.Report{}, exitInternal, registryDetectErr
 		}
-		if projectEntry.ProjectID != expectedProjectIDs[0] {
-			return model.Report{}, exitInternal, fmt.Errorf("%w: registered %q, current %q", registry.ErrProjectIdentityMismatch, expectedProjectIDs[0], projectEntry.ProjectID)
+		if projectEntry.ProjectID != options.ExpectedProjectIDs[0] {
+			return model.Report{}, exitInternal, fmt.Errorf("%w: registered %q, current %q", registry.ErrProjectIdentityMismatch, options.ExpectedProjectIDs[0], projectEntry.ProjectID)
 		}
 	}
 	runID := verify.NewRunID()
 	registryStarted := false
 	if registryDetectErr != nil {
-		fmt.Fprintf(os.Stderr, "registry unavailable: %v\n", registryDetectErr)
+		fmt.Fprintf(diagnostics, "registry unavailable: %v\n", registryDetectErr)
 	} else {
 		if err := registry.Register(projectEntry); err != nil {
-			fmt.Fprintf(os.Stderr, "registry update unavailable: %v\n", err)
+			fmt.Fprintf(diagnostics, "registry update unavailable: %v\n", err)
 		}
 		if err := registry.Begin(projectEntry, runID, os.Getpid()); err != nil {
-			fmt.Fprintf(os.Stderr, "registry run state unavailable: %v\n", err)
+			fmt.Fprintf(diagnostics, "registry run state unavailable: %v\n", err)
 			if errors.Is(err, registry.ErrActiveRun) {
 				return model.Report{}, exitInternal, err
 			}
@@ -225,10 +279,10 @@ func executeVerification(projectPath string, liveOutput bool, expectedProjectIDs
 		}
 	}
 	var report model.Report
-	if liveOutput {
+	if options.LiveOutput {
 		recorder, recorderErr := workflow.New(projectPath)
 		if recorderErr != nil {
-			fmt.Fprintf(os.Stderr, "live workflow journal unavailable: %v\n", recorderErr)
+			fmt.Fprintf(diagnostics, "live workflow journal unavailable: %v\n", recorderErr)
 		}
 		renderer := live.NewRenderer(os.Stderr)
 		asyncRenderer := events.NewAsyncSink(renderer, 256)
@@ -237,20 +291,102 @@ func executeVerification(projectPath string, liveOutput bool, expectedProjectIDs
 			subscribers = append(subscribers, recorder)
 		}
 		stream := events.NewStream(subscribers...)
-		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{Sink: stream, RunID: runID})
+		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{Sink: stream, RunID: runID, OutputMetrics: options.OutputMetrics})
 		asyncRenderer.Close()
 		if recorder != nil {
 			_ = recorder.Close()
 		}
 	} else {
-		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{RunID: runID})
+		report = verify.ProjectWithOptions(context.Background(), projectPath, verify.Options{RunID: runID, OutputMetrics: options.OutputMetrics})
 	}
 	if registryStarted {
 		if err := registry.Finish(projectEntry.ProjectID, runID, string(report.Overall)); err != nil {
-			fmt.Fprintf(os.Stderr, "registry completion unavailable: %v\n", err)
+			fmt.Fprintf(diagnostics, "registry completion unavailable: %v\n", err)
 		}
 	}
 	return report, verify.ExitCode(report), nil
+}
+
+func verifyAgent(projectPath string, startedAt time.Time) int {
+	metrics := &runner.OutputMetrics{}
+	report, exitCode, executionErr := executeVerificationWithOptions(projectPath, verificationExecutionOptions{
+		Diagnostics:   io.Discard,
+		OutputMetrics: metrics,
+	})
+	if executionErr != nil {
+		return printAgentError("verification_unavailable", executionErr.Error(), startedAt)
+	}
+	_ = recordVerificationSession(report, projectPath)
+	snapshot := metrics.Snapshot()
+	localBytes, localEvidenceErr := evidenceDirectoryBytes(projectPath, report.EvidencePath)
+	result := worker.NewAgentVerificationResult(report, exitCode, startedAt, time.Now().UTC(), worker.InformationFlow{
+		RawSubprocessBytes:      snapshot.RawBytes,
+		RetainedSubprocessBytes: snapshot.RetainedBytes,
+		LocalEvidenceBytes:      localBytes,
+		LocalEvidenceMeasured:   localEvidenceErr == nil,
+		OutputTruncated:         snapshot.Truncated,
+	})
+	return printAgentResult(result, exitCode)
+}
+
+func printAgentError(code, message string, startedAt time.Time) int {
+	result := worker.RejectedAgentResult(code, message, startedAt, time.Now().UTC())
+	return printAgentResult(result, exitInternal)
+}
+
+func printAgentResult(result worker.Result, exitCode int) int {
+	data, err := worker.EncodeResult(result)
+	if err != nil {
+		fallback := worker.RejectedAgentResult("result_encoding_failed", err.Error(), result.StartedAt, time.Now().UTC())
+		data, err = worker.EncodeResult(fallback)
+		if err != nil {
+			return exitInternal
+		}
+		exitCode = exitInternal
+	}
+	if _, err := os.Stdout.Write(data); err != nil {
+		return exitInternal
+	}
+	return exitCode
+}
+
+func evidenceDirectoryBytes(projectPath, relativeEvidencePath string) (int64, error) {
+	if strings.TrimSpace(relativeEvidencePath) == "" {
+		return 0, errors.New("verification did not record an evidence path")
+	}
+	root := filepath.Join(projectPath, filepath.FromSlash(relativeEvidencePath))
+	var total int64
+	err := filepath.Walk(root, func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+func agentFlagRequested(args []string) bool {
+	requested := false
+	for _, argument := range args {
+		if argument == "--" || !strings.HasPrefix(argument, "-") {
+			break
+		}
+		if argument == "--agent" {
+			requested = true
+			continue
+		}
+		if strings.HasPrefix(argument, "--agent=") {
+			enabled, err := strconv.ParseBool(strings.TrimPrefix(argument, "--agent="))
+			if err != nil {
+				return true
+			}
+			requested = requested || enabled
+		}
+	}
+	return requested
 }
 
 func sessionCommand(args []string) int {
@@ -380,14 +516,20 @@ func usage() {
 	program := filepath.Base(os.Args[0])
 	fmt.Printf("Usage: %s version [--json]\n", program)
 	fmt.Printf("Usage: %s discover [--json] [root]\n", program)
-	fmt.Printf("       %s verify [--json] [--live] <project>\n", program)
+	fmt.Printf("       %s verify [--json] [--live] [--agent] <project>\n", program)
 	fmt.Printf("       %s worker verify [--live] --request <request.json>\n", program)
 	fmt.Printf("       %s session record|status|resume ...\n", program)
 	fmt.Printf("       %s handoff [--json] <report.json>\n", program)
+	fmt.Printf("       %s failures [--json] [--project <path>] [--offset <index>] <run-id>\n", program)
+	fmt.Printf("       %s failure [--json] [--project <path>] [--offset <index>] <run-id> <check-id>\n", program)
 	fmt.Printf("       %s repair [--json] [--verbose] [--proposal <proposal.json>] [--allow <path,...>] <project>\n", program)
 	fmt.Printf("       %s context|status [--json] [project]\n", program)
 	fmt.Printf("       %s evidence rebuild|latest [--json] <project>\n", program)
+	fmt.Printf("       %s evidence [--json] [--project <path>] [--offset <bytes>] <run-id> <failure-id>\n", program)
 	fmt.Printf("       %s history [--json] <project>\n", program)
 	fmt.Printf("       %s lessons query|add [--json] <project>\n", program)
+	fmt.Printf("       %s fixes record [--json] --input <candidate.json> <project>\n", program)
+	fmt.Printf("       %s fixes list [--json] [--limit <count>] <project>\n", program)
+	fmt.Printf("       %s fixes show [--json] <project> <fix-id>\n", program)
 	fmt.Printf("       %s cache status|inspect|clear [--json] <project>\n", program)
 }

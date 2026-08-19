@@ -8,11 +8,16 @@ Navigation: [documentation index](README.md) · [roadmap](ROADMAP.md) · [decisi
 
 Stages 4C through 6 are complete. Stage 7 is now the multi-project deterministic developer automation platform work. HearthLink is the first Android integration, not the boundary of devctl.
 
-Next:
+Current local stage:
 
 ```text
-Stage 7D-C plus compact context, knowledge, cache and evidence interfaces — local implementation and verification audit
+Stage 7F-C deterministic cross-project knowledge search
 ```
+
+Stage 7E-A, 7E-B, 7F-A, local 7F-B and local 7F-C focused acceptance pass. The GitHub
+Actions workflow is ready, but hosted acceptance remains
+`NOT TESTED` until the owner explicitly authorizes publication and a remote run
+passes.
 
 AI remains an optional worker inside a workflow. It is not the execution authority. Do not add automatic Git actions or unbounded repair loops as part of Stage 7C.
 
@@ -43,7 +48,7 @@ The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Sta
 - Java, Gradle wrapper, and Android structure checks
 - Build, unit test, and lint checks
 - Secret scanning
-- Coverage and dependency check surfaces that truthfully report `NOT_TESTED`
+- Coverage and dependency checks with truthful `NOT_TESTED` fallbacks
 - JSON policy and persistent evidence
 
 ### Stage 4A — Go self-verification
@@ -60,8 +65,8 @@ The Stage 7C control contract is [STAGE_7C_CONTROL.md](STAGE_7C_CONTROL.md). Sta
 - HearthLink checks out a pinned private `_devctl` commit using `DEVCTL_REPO_TOKEN`
 - The exact pinned devctl is built before HearthLink verification
 - HearthLink evidence is uploaded separately
-- Generated `.devctl/evidence/` no longer causes a Git warning
-- Clean CI result: Android build, tests, lint, secret scan, and Git status pass; coverage and dependency scanning remain `NOT_TESTED`; exit `0`
+- Generated `/.devctl/` state is ignored by HearthLink onboarding
+- Clean CI result: Android build, tests, lint, secret scan, and Git status pass; coverage remains a blocking `FAIL` below 70%, while dependency evidence can use the resolved Gradle graph and OSV query service
 
 ### Stage 4C — HearthLink JaCoCo coverage
 
@@ -135,6 +140,81 @@ The initial implementation is in [STAGE_7D_B_IMPLEMENTATION.md](STAGE_7D_B_IMPLE
 The design contract and Windows process acceptance record are documented in [STAGE_7D_C_CONTROL.md](STAGE_7D_C_CONTROL.md). The production CLI supplies the terminal workflow, controlled proposal-file seam, engine-owned approval evidence, observational live progress through `internal/events`, approval input, strict JSON/stdout separation and defined exit codes. Fresh visible-terminal evidence passes `A`, `R`, `C`, `D` then decision, invalid then valid input, TTY EOF, JSON separation, and the exact hash-bound apply path. A direct native visible-terminal Ctrl+C-before-application case also returned exit `4` with unchanged baseline evidence. Timing-sensitive Ctrl+C during or after mutation remains `NOT_TESTED` because the small fixture completes its apply and verification phases before a manual signal can reliably reach those windows; the deterministic package rollback tests remain the evidence for those seams. Deterministic verification-cache reuse remains outside this stage.
 
 The compact context, lessons, cache and evidence-index interfaces are documented in [PLATFORM_CONTEXT.md](PLATFORM_CONTEXT.md).
+
+## Stage 7E-A — Agent verification boundary — CLEAN ISOLATED ACCEPTANCE PASS
+
+`devctl verify --agent <project>` uses the ordinary full verification path and
+returns one bounded JSON object. It does not stream child output to the caller,
+does not add a second scheduler or policy path, and preserves the ordinary
+verification exit code. The result includes repository/check provenance and
+measured raw, retained, evidence and response byte counts.
+
+Controlled PASS and verbose FAIL fixtures passed. The verbose fixture observed
+`2,949,361` child-output bytes and returned a `2,387`-byte result. A fresh
+`_devctl` self-verification run `20260819T035859.010689900Z` returned exit `0`
+with overall `WARN` for the expected dirty worktree; Go build, tests, race tests
+and secret scan passed. The detailed checklist and acceptance record is
+[STAGE_7E_A_AGENT_VERIFICATION_BOUNDARY.md](STAGE_7E_A_AGENT_VERIFICATION_BOUNDARY.md).
+An independent clean snapshot also passed all seven checks with exact clean
+commit provenance, a `1,903`-byte agent result and empty stderr. Hosted GitHub
+Actions acceptance remains `NOT TESTED`.
+
+## Stage 7E-B — Progressive failure and evidence retrieval — CLEAN ISOLATED ACCEPTANCE PASS
+
+`devctl failures`, `devctl failure`, and selected `devctl evidence` retrieval
+implement Levels 2–4 against one exact existing run. They do not execute checks
+or follow evidence paths stored in reports. JSON is capped at `16 KiB`; selected
+raw content is read in bounded chunks, normalized and redacted, with truthful
+raw-byte continuation metadata.
+
+Focused command, paging, hostile-data, split-boundary redaction, containment,
+legacy evidence, worker and agent compatibility tests pass. Broad tests, vet,
+diff checks and a commit-pinned clean isolated verification also pass. The
+clean binary retrieved an empty PASS list and one real historical failure; a
+missing raw log returned structured `evidence_unavailable` instead of following
+another path. The guide and exact evidence are
+[STAGE_7E_B_PROGRESSIVE_DISCLOSURE.md](STAGE_7E_B_PROGRESSIVE_DISCLOSURE.md).
+
+## Stage 7F-A — Structured Fix Records — CLEAN ISOLATED ACCEPTANCE PASS
+
+`devctl fixes record` accepts one strict bounded candidate and creates a
+project-local `VERIFIED` record only when exact pre/post verification reports,
+target check transitions, project identity, complete provenance, run order and
+the current repository fingerprint satisfy `fix-closure-v1`. The record binds
+the SHA-256 of both exact report files and an optional contained patch artifact.
+
+Every record is a separate create-only normal file under
+`.devctl/knowledge/fix-records`. Duplicate IDs cannot overwrite old bytes;
+corrections create a new record naming `supersedes`. Stored content carries a
+canonical integrity hash, and `list`, `show` and later appends fail closed when
+the store is malformed or a record was edited. Concurrent same-ID writes allow
+exactly one winner.
+
+Fix Records remain distinct from advisory or generalized Lessons. Creation
+does not write `.devctl/knowledge/lessons.json` or promote anything into
+`knowledge/lessons.yaml`. Focused, full, race, vet, build, diff and clean
+isolated-snapshot acceptance pass. The exact contract and remaining Stage
+7F-B/7F-C boundary are in
+[STAGE_7F_A_STRUCTURED_FIX_RECORDS.md](STAGE_7F_A_STRUCTURED_FIX_RECORDS.md).
+
+## Stage 7F-B - authoritative knowledge and explicit promotion
+
+The local 7F-B implementation is now present in `internal/knowledgevault`.
+It stores project-local and global lesson revisions as create-only authoritative
+JSON files with UUID identity, display IDs, lifecycle status, compatibility
+metadata, source Fix Record IDs and content hashes. The generated lesson index
+can be deleted and rebuilt from those files.
+
+Lesson drafts without objective Fix Record evidence remain
+`REQUIRES_REVIEW`. A verified Fix Record can produce a candidate, but a human
+review operation is still required before `VERIFIED`. Global promotion is a
+separate operation with explicit approval and sanitization for secrets,
+private paths and raw-log content.
+
+Focused, full, race, vet, build, diff and clean isolated-snapshot acceptance
+pass after the 7F-C hardening repairs. Stage 7F-C deterministic metadata search
+is locally accepted; staleness-aware policy remains outside this slice. Hosted
+GitHub Actions and publication remain `NOT TESTED`/`NOT DONE`.
 
 ## Control-plane completion notes
 
